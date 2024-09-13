@@ -66,7 +66,7 @@ typedef long double ld;
 const ull half_max_ull = std::numeric_limits<ull>::max() / 2;
 int rank = 0, size = 1;
 
-inline void partial_pixels(ull r, ull k, ull start, ull end, ull* pixels);
+inline void partial_pixels(ull r, ull k, ull start, ull end, ull& pixels);
 inline void finalize_pixels(ull k, ull square, ull& pixels);
 void exec_seq(ull r, ull k);
 void exec_mpi(ull r, ull k);
