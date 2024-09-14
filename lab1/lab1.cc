@@ -127,7 +127,7 @@ int Solver::solve(int argc, char** argv) {
         TIMING_END(param_init);
     }
 
-    if (size == 1) {
+    if (size == 1 || r <= 21474) {
         if (rank == 0)
             exec_seq();
     } else {
