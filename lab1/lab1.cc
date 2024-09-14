@@ -81,6 +81,7 @@ class Solver {
 
     inline void exec_seq();
     inline void exec_mpi();
+    inline void param_init();
     inline void partial_pixels(ull start, ull end, ull& pixels);
     inline void finalize_pixels(ull& pixels);
 };
@@ -105,10 +106,7 @@ int Solver::solve(int argc, char** argv) {
 
     r = atoll(argv[1]);
     k = atoll(argv[2]);
-    // Optimization: Compute first and reuse the square of radius
-    sq_r = r * r;
-    hf_x = ceil(sqrtl(sq_r / 2));    // End of all tasks
-    square = k - (hf_x * hf_x) % k;  // Value to be deducted after multipling pixels by 2
+    param_init();
 
     if (size == 1) {
         if (rank != 0)
@@ -128,6 +126,13 @@ inline void Solver::exec_seq() {
     finalize_pixels(pixels);
     std::cout << pixels << "\n";
     TIMING_END(seq_all);
+}
+
+inline void Solver::param_init() {
+    // Optimization: Compute first and reuse the square of radius
+    sq_r = r * r;
+    hf_x = ceil(sqrtl(sq_r / 2));    // End of all tasks
+    square = k - (hf_x * hf_x) % k;  // Value to be deducted after multipling pixels by 2
 }
 
 inline void Solver::exec_mpi() {
