@@ -116,9 +116,8 @@ int Solver::solve(int argc, char** argv) {
     param_init();
 
     if (size == 1) {
-        if (rank != 0)
-            return 0;
-        exec_seq();
+        if (rank == 0)
+            exec_seq();
     } else {
         exec_mpi();
     }
