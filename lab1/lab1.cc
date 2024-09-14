@@ -7,7 +7,7 @@
 #include <limits>
 
 #ifdef DEBUG
-#define DEBUG_MSG(str) std::cerr << str << "\\n";
+#define DEBUG_MSG(str) std::cerr << str << "\n";
 #else
 #define DEBUG_MSG(str)
 #endif  // DEBUG
