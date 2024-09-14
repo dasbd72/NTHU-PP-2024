@@ -77,7 +77,6 @@ class Solver {
     ull k;
     ull sq_r;
     ull hf_x;
-    ull square;
 
     inline void exec_seq();
     inline void exec_mpi();
@@ -122,7 +121,7 @@ int Solver::solve(int argc, char** argv) {
 inline void Solver::exec_seq() {
     TIMING_START(seq_all);
     ull pixels = 0;
-    partial_pixels(0, hf_x, pixels);
+    partial_pixels(hf_x, r, pixels);
     finalize_pixels(pixels);
     std::cout << pixels << "\n";
     TIMING_END(seq_all);
@@ -131,20 +130,19 @@ inline void Solver::exec_seq() {
 inline void Solver::param_init() {
     // Optimization: Compute first and reuse the square of radius
     sq_r = r * r;
-    hf_x = ceil(sqrtl(sq_r / 2));    // End of all tasks
-    square = k - (hf_x * hf_x) % k;  // Value to be deducted after multipling pixels by 2
+    hf_x = ceil(sqrtl(sq_r / 2));  // End of all tasks
 }
 
 inline void Solver::exec_mpi() {
     TIMING_START(mpi_all);
     // Optimization: Different task size for each process
-    const double factor = 0.08;
+    const double factor = 0.62;
     const double sum_weights = size * 1.0 + factor * (size - 1) * size / 2;  // Sum of weights
     ull pivots[size + 1] = {};
-    pivots[0] = 0;
+    pivots[0] = hf_x;
     for (int i = 1; i < size; i++)
-        pivots[i] = pivots[i - 1] + ceil((1.0 + (size - i) * factor) / sum_weights * hf_x);
-    pivots[size] = hf_x;
+        pivots[i] = pivots[i - 1] + ceil((1.0 + (size - i) * factor) / sum_weights * (r - hf_x));
+    pivots[size] = r;
     const ull local_start = pivots[rank];
     const ull local_end = pivots[rank + 1];
     ull pixels = 0;
@@ -222,7 +220,7 @@ inline void Solver::finalize_pixels(ull& pixels) {
     pixels *= 2;
     if (pixels > half_max_ull)
         pixels %= k;
-    pixels += square;
+    pixels += (hf_x * hf_x) % k;
     if (pixels > half_max_ull)
         pixels %= k;
     pixels = (4 * pixels) % k;
