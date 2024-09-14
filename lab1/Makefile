@@ -9,7 +9,7 @@ ifeq ($(TIMING), 1)
 endif
 
 ifeq ($(DEBUG), 1)
-	CXXFLAGS += -DEBUG
+	CXXFLAGS += -DDEBUG
 endif
 
 ifeq ($(SANITIZE), 1)
