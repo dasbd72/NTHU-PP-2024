@@ -66,6 +66,7 @@ typedef long double ld;
 class Solver {
    public:
     Solver() {}
+    ~Solver();
     int solve(int argc, char** argv);
 
    private:
@@ -77,6 +78,7 @@ class Solver {
     ull k;
     ull sq_r;
     ull hf_x;
+    ull* pivots;
 
     inline void exec_seq();
     inline void exec_mpi();
@@ -88,6 +90,12 @@ class Solver {
 int main(int argc, char** argv) {
     Solver solver;
     return solver.solve(argc, argv);
+}
+
+Solver::~Solver() {
+    if (size > 1) {
+        delete[] pivots;
+    }
 }
 
 int Solver::solve(int argc, char** argv) {
@@ -130,29 +138,32 @@ inline void Solver::exec_seq() {
 inline void Solver::param_init() {
     // Optimization: Compute first and reuse the square of radius
     sq_r = r * r;
+
+    // Optimization: Reduce number of tasks to r - hf_x
     hf_x = ceil(sqrtl(sq_r / 2));  // End of all tasks
+
+    // Optimization: Different task size for each process
+    if (size > 1) {
+        pivots = new ull[sizeof(ull) * (size + 1)];
+        const double factor = 0.62;
+        const double sum_weights = size * 1.0 + factor * (size - 1) * size / 2;  // Sum of weights
+        pivots[0] = hf_x;
+        for (int i = 1; i < size; i++)
+            pivots[i] = pivots[i - 1] + ceil((1.0 + (size - i) * factor) / sum_weights * (r - hf_x));
+        pivots[size] = r;
+    }
 }
 
 inline void Solver::exec_mpi() {
     TIMING_START(mpi_all);
-    // Optimization: Different task size for each process
-    const double factor = 0.62;
-    const double sum_weights = size * 1.0 + factor * (size - 1) * size / 2;  // Sum of weights
-    ull pivots[size + 1] = {};
-    pivots[0] = hf_x;
-    for (int i = 1; i < size; i++)
-        pivots[i] = pivots[i - 1] + ceil((1.0 + (size - i) * factor) / sum_weights * (r - hf_x));
-    pivots[size] = r;
-    const ull local_start = pivots[rank];
-    const ull local_end = pivots[rank + 1];
     ull pixels = 0;
     ull* remote_pixels = nullptr;
     ull local_pixels = 0;
     TIMING_START(mpi_loop);
-    partial_pixels(local_start, local_end, local_pixels);
+    partial_pixels(pivots[rank], pivots[rank + 1], local_pixels);
     TIMING_END(mpi_loop);
     if (rank == 0)
-        remote_pixels = (ull*)malloc(sizeof(ull) * size);  // Allocate buffer
+        remote_pixels = new ull[sizeof(ull) * size];
     TIMING_START(mpi_gather);
     MPI_Gather(&local_pixels, 1, MPI_UNSIGNED_LONG_LONG, remote_pixels, 1, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
     if (rank == 0) {
@@ -166,6 +177,7 @@ inline void Solver::exec_mpi() {
         }
         finalize_pixels(pixels);
         std::cout << pixels << "\n";
+        delete[] remote_pixels;
     }
     if (rank == 0) {
         TIMING_END(mpi_all);
