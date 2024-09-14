@@ -9,7 +9,8 @@
 #ifdef DEBUG
 #define DEBUG_MSG(str) std::cerr << str << "\n";
 #else
-#define DEBUG_MSG(str)
+#define DEBUG_MSG(str) \
+    {}
 #endif  // DEBUG
 
 #ifdef TIMING
@@ -53,11 +54,16 @@
     std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
     std::cerr.flush();
 #else
-#define TIMING_START(arg)
-#define TIMING_END(arg)
-#define TIMING_INIT(arg)
-#define TIMING_ACCUM(arg)
-#define TIMING_FIN(arg)
+#define TIMING_START(arg) \
+    {}
+#define TIMING_END(arg) \
+    {}
+#define TIMING_INIT(arg) \
+    {}
+#define TIMING_ACCUM(arg) \
+    {}
+#define TIMING_FIN(arg) \
+    {}
 #endif  // TIMING
 
 typedef unsigned long long ull;
@@ -107,13 +113,19 @@ int Solver::solve(int argc, char** argv) {
         return 1;
     }
 
+    TIMING_START(mpi_init);
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    TIMING_END(mpi_init);
 
     r = atoll(argv[1]);
     k = atoll(argv[2]);
+    TIMING_START(param_init);
     param_init();
+    if (rank == 0) {
+        TIMING_END(param_init);
+    }
 
     if (size == 1) {
         if (rank == 0)
@@ -121,7 +133,9 @@ int Solver::solve(int argc, char** argv) {
     } else {
         exec_mpi();
     }
+    TIMING_START(mpi_finallize);
     MPI_Finalize();
+    TIMING_END(mpi_finallize);
     return 0;
 }
 
@@ -207,6 +221,7 @@ inline void Solver::exec_mpi() {
         TIMING_END(mpi_gather);
     }
     if (rank == 0) {
+        TIMING_START(mpi_summing);
         for (int i = 0; i < size; i++) {
             if (pixels > k)
                 pixels %= k;
@@ -215,6 +230,7 @@ inline void Solver::exec_mpi() {
         finalize_pixels(pixels);
         std::cout << pixels << "\n";
         delete[] remote_pixels;
+        TIMING_END(mpi_summing);
     }
     if (rank == 0) {
         TIMING_END(mpi_all);
