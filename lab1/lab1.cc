@@ -133,9 +133,9 @@ int Solver::solve(int argc, char** argv) {
     } else {
         exec_mpi();
     }
-    TIMING_START(mpi_finallize);
-    MPI_Finalize();
-    TIMING_END(mpi_finallize);
+    // TIMING_START(mpi_finallize);
+    // MPI_Finalize();
+    // TIMING_END(mpi_finallize);
     return 0;
 }
 
