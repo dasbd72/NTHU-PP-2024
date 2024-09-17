@@ -8,12 +8,14 @@ import argparse
 class Args:
     verify = False
     local_dir = False
+    testcase_dir = "testcases"
     testcase = None
 
 
 args = argparse.ArgumentParser()
 args.add_argument("--verify", action="store_true")
 args.add_argument("--local-dir", action="store_true")
+args.add_argument("--testcase-dir", type=str)
 args.add_argument("testcase", type=str)
 
 
@@ -47,9 +49,9 @@ if __name__ == "__main__":
         print("Testcase not provided")
         exit(1)
     print(f"Running testcase {testcase}")
-    testcase_txt = f"testcases/{testcase}.txt"
-    testcase_in = f"testcases/{testcase}.in"
-    testcase_out = f"testcases/{testcase}.out"
+    testcase_txt = f"{args.testcase_dir}/{testcase}.txt"
+    testcase_in = f"{args.testcase_dir}/{testcase}.in"
+    testcase_out = f"{args.testcase_dir}/{testcase}.out"
     if args.local_dir:
         outputs_dir = "outputs"
     else:
