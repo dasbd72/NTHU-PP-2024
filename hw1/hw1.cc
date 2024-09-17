@@ -75,12 +75,14 @@ class Solver {
     void odd_even_sort_mpi();
 
    private:
+    // Optimization: Give a minimum size per process to reduce communication overhead
     const int MIN_SIZE_PER_PROC = 100000;
     int world_rank = 0;
     int world_size = 1;
     int array_size = 0;
     char *input_filename = nullptr;
     char *output_filename = nullptr;
+    // Optimization: Merge only to the left or right to reduce number of elements to be copied
     void merge_left(int n, float *&left, float *&right, float *&buffer);
     void merge_right(int n, float *&left, float *&right, float *&buffer);
 };
@@ -123,6 +125,7 @@ int Solver::solve(int argc, char **argv) {
         TIMING_END(odd_even_sort_mpi, world_rank);
     }
 
+    // Optimization: Return without finalizing mpi
     // Finalize mpi
     // TIMING_START(mpi_finalize);
     // MPI_Finalize();
@@ -155,6 +158,8 @@ void Solver::odd_even_sort_mpi() {
     MPI_File input_file, output_file;
     int local_size, local_start, local_end;
     int actual_local_size, actual_world_size;
+    // Optimization: Use one contiguous buffer
+    // Optimization: Use pointers to represent each part of the buffer to enable swapping without copying
     float *buffer, *local_data, *neighbor_data, *merge_buffer;
     int left_rank, right_rank;
 
@@ -177,6 +182,7 @@ void Solver::odd_even_sort_mpi() {
         DEBUG_MSG("actual_world_size: " << actual_world_size);
     }
 
+    // Optimization: Use MPI_COMM_SELF to read and write files to avoid synchronization overhead
     // Read file into buffer and fill the rest with max value
     TIMING_START(mpi_read);
     MPI_File_open(MPI_COMM_SELF, input_filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &input_file);
@@ -200,6 +206,7 @@ void Solver::odd_even_sort_mpi() {
     }
 
     // === odd-even sort start ===
+    // Optimization: Use spreadsort to sort local data for better performance
     // Sort local
     TIMING_START(local_sort);
     boost::sort::spreadsort::spreadsort(local_data, local_data + local_size);
@@ -209,11 +216,13 @@ void Solver::odd_even_sort_mpi() {
     TIMING_INIT(local_merge);
     // Initialize neighbor buffer
     for (int p = 0; p < actual_world_size + 1; p++) {
+        // Optimization: Compute to communicate with left or right rank instead of casing under odd or even phase
         // phase[even,odd] rank[even,odd] way[right,left]
         // 0 0 0
         // 0 1 1
         // 1 0 1
         // 1 1 0 -> ~(phase ^ rank) = way
+        // Optimization: Skip if the two ranks are well-sorted before exchanging all data
         if ((p ^ world_rank) & 1) {
             // Communicate with left
             if (left_rank == MPI_PROC_NULL)
