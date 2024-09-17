@@ -53,7 +53,7 @@ if __name__ == "__main__":
     if args.local_dir:
         outputs_dir = "outputs"
     else:
-        outputs_dir = "/share/judge_dir/.tc.pp24s105"
+        outputs_dir = "/share/judge_dir/.judge_exe.pp24s105"
     outputs_out = f"{outputs_dir}/{testcase}.out"
     # Check if the testcase exists
     if not os.path.exists(testcase_txt):
@@ -65,7 +65,11 @@ if __name__ == "__main__":
     if not os.path.exists(testcase_out):
         print("Testcase output not found")
         exit(1)
-    os.makedirs(outputs_dir, exist_ok=True)
+    if os.path.exists(outputs_dir):
+        # Check mode 700
+        if os.stat(outputs_dir).st_mode & 0o777 != 0o700:
+            os.chmod(outputs_dir, 0o700)
+    os.makedirs(outputs_dir, exist_ok=True, mode=0o700)
     # Build the program
     code = build()
     if code != 0:
