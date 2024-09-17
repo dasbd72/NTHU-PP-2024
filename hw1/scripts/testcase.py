@@ -15,7 +15,7 @@ class Args:
 args = argparse.ArgumentParser()
 args.add_argument("--verify", action="store_true")
 args.add_argument("--local-dir", action="store_true")
-args.add_argument("--testcase-dir", type=str)
+args.add_argument("--testcase-dir", type=str, default="testcases")
 args.add_argument("testcase", type=str)
 
 
