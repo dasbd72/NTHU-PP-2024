@@ -155,7 +155,7 @@ void Solver::odd_even_sort_mpi() {
     MPI_File input_file, output_file;
     int local_size, local_start, local_end;
     int actual_local_size, actual_world_size;
-    float *buffer, *local_data, *neighbor_data, *merge_buffer, val;
+    float *buffer, *local_data, *neighbor_data, *merge_buffer;
     int left_rank, right_rank;
 
     local_size = std::min(array_size, std::max((int)ceil((double)array_size / world_size), MIN_SIZE_PER_PROC));
@@ -220,16 +220,18 @@ void Solver::odd_even_sort_mpi() {
                 continue;
             // Pre-check if the two ranks are well-sorted
             TIMING_START(mpi_exchange_1);
-            MPI_Sendrecv(local_data, 1, MPI_FLOAT, left_rank, 0, &val, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Sendrecv(local_data, 1, MPI_FLOAT, left_rank, 0, neighbor_data + local_size - 1, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             TIMING_ACCUM(mpi_exchange_1);
-            if (val <= *local_data) {
+            if (*(neighbor_data + local_size - 1) <= *local_data) {
                 // Skip since sorted
                 continue;
             }
             // Exchange data
-            TIMING_START(mpi_exchange_2);
-            MPI_Sendrecv(local_data, local_size, MPI_FLOAT, left_rank, 0, neighbor_data, local_size, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TIMING_ACCUM(mpi_exchange_2);
+            if (local_size > 1) {
+                TIMING_START(mpi_exchange_2);
+                MPI_Sendrecv(local_data + 1, local_size - 1, MPI_FLOAT, left_rank, 0, neighbor_data, local_size - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                TIMING_ACCUM(mpi_exchange_2);
+            }
             // Merge
             TIMING_START(local_merge);
             merge_right(local_size, neighbor_data, local_data, merge_buffer);
@@ -240,16 +242,18 @@ void Solver::odd_even_sort_mpi() {
                 continue;
             // Pre-check if the two ranks are well-sorted
             TIMING_START(mpi_exchange_1);
-            MPI_Sendrecv(local_data + local_size - 1, 1, MPI_FLOAT, right_rank, 0, &val, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Sendrecv(local_data + local_size - 1, 1, MPI_FLOAT, right_rank, 0, neighbor_data, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             TIMING_ACCUM(mpi_exchange_1);
-            if (*(local_data + local_size - 1) <= val) {
+            if (*(local_data + local_size - 1) <= *neighbor_data) {
                 // Skip since sorted
                 continue;
             }
             // Exchange data
-            TIMING_START(mpi_exchange_2);
-            MPI_Sendrecv(local_data, local_size, MPI_FLOAT, right_rank, 0, neighbor_data, local_size, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TIMING_ACCUM(mpi_exchange_2);
+            if (local_size > 1) {
+                TIMING_START(mpi_exchange_2);
+                MPI_Sendrecv(local_data, local_size - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, local_size - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                TIMING_ACCUM(mpi_exchange_2);
+            }
             // Merge
             TIMING_START(local_merge);
             merge_left(local_size, local_data, neighbor_data, merge_buffer);
