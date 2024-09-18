@@ -14,8 +14,6 @@ endif
 
 ifeq ($(SANITIZE), 1)
 	CXXFLAGS += -g
-else ifeq ($(DEBUG), 1)
-	CXXFLAGS += -g
 endif
 
 ifeq ($(SANITIZE), 1)
