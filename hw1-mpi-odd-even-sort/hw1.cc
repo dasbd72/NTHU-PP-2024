@@ -237,7 +237,7 @@ void Solver::odd_even_sort_mpi() {
     TIMING_INIT(mpi_exchange_2);
     TIMING_INIT(local_merge);
     // Initialize neighbor buffer
-    for (int p = 0; p < actual_world_size + 1; p++) {
+    for (int p = 0; p < actual_world_size; p++) {
         // Optimization: Compute to communicate with left or right rank instead of casing under odd or even phase
         // phase[even,odd] rank[even,odd] way[right,left]
         // 0 0 0
