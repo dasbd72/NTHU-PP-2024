@@ -93,11 +93,18 @@ class Solver {
    private:
     // Optimization: Give a minimum size per process to reduce communication overhead
     const int MIN_SIZE_PER_PROC = 100000;
+    // Optimization: Use chunks to fine grain decide the size of data to be exchanged
+    const int MIN_CHUNK_SIZE = 1000;
+    const int MAX_CHUNK_COUNT = 100;
     int world_rank = 0;
     int world_size = 1;
     int array_size = 0;
     char *input_filename = nullptr;
     char *output_filename = nullptr;
+    void fill_chunk_pivot_val(float *data, int chunk_count, int *chunk_pivot, float *chunk_pivot_val);
+    // Optimization: send/recv only necessary counts
+    void get_left_chunk_pivot(int chunk_count, int *chunk_pivot, float *chunk_pivot_val, float target, int &pivot);
+    void get_right_chunk_pivot(int chunk_count, int *chunk_pivot, float *chunk_pivot_val, float target, int &pivot);
     // Optimization: Merge only to the left or right to reduce number of elements to be copied
     void merge_left(int n, float *&left, float *&right, float *&buffer);
     void merge_right(int n, float *&left, float *&right, float *&buffer);
@@ -176,6 +183,9 @@ void Solver::odd_even_sort_mpi() {
     MPI_File input_file, output_file;
     int local_size, local_start, local_end;
     int actual_local_size, actual_world_size;
+    // Optimization: Use chunks to fine grain decide the size of data to be exchanged
+    int chunk_size, chunk_count, *chunk_pivot, left_pivot, right_pivot;
+    float *chunk_pivot_val, *neighbor_chunk_pivot_val;
     // Optimization: Use one contiguous buffer
     // Optimization: Use pointers to represent each part of the buffer to enable swapping without copying
     float *buffer, *local_data, *neighbor_data, *merge_buffer;
@@ -187,10 +197,21 @@ void Solver::odd_even_sort_mpi() {
     actual_local_size = local_end - local_start;
     actual_world_size = std::min(world_size, (int)ceil((double)array_size / local_size));
 
-    buffer = new float[local_size * 3];
+    chunk_size = std::max(MIN_CHUNK_SIZE, local_size / MAX_CHUNK_COUNT);
+    chunk_count = local_size / chunk_size + 2;
+    chunk_pivot = new int[chunk_count];
+    chunk_pivot[0] = 0;
+    for (int i = 0; i < chunk_count - 2; i++) {
+        chunk_pivot[i + 1] = std::min(chunk_pivot[i] + chunk_size, local_size - 1);
+    }
+    chunk_pivot[chunk_count - 1] = local_size - 1;
+
+    buffer = new float[local_size * 3 + chunk_count * 2];
     local_data = buffer;
     neighbor_data = buffer + local_size;
     merge_buffer = buffer + local_size * 2;
+    chunk_pivot_val = buffer + local_size * 3;
+    neighbor_chunk_pivot_val = buffer + local_size * 3 + chunk_count;
     if (world_rank == 0) {
         DEBUG_MSG("array_size: " << array_size);
         DEBUG_MSG("local_size: " << local_size);
@@ -198,6 +219,8 @@ void Solver::odd_even_sort_mpi() {
         DEBUG_MSG("local_end: " << local_end);
         DEBUG_MSG("actual_local_size: " << actual_local_size);
         DEBUG_MSG("actual_world_size: " << actual_world_size);
+        DEBUG_MSG("chunk_size: " << chunk_size);
+        DEBUG_MSG("chunk_count: " << chunk_count);
     }
 
     // Optimization: Use MPI_COMM_SELF to read and write files to avoid synchronization overhead
@@ -236,6 +259,7 @@ void Solver::odd_even_sort_mpi() {
     TIMING_INIT(mpi_exchange_1);
     TIMING_INIT(mpi_exchange_2);
     TIMING_INIT(local_merge);
+    TIMING_INIT(local_get_pivot);
     // Initialize neighbor buffer
     for (int p = 0; p < actual_world_size; p++) {
         // Optimization: Compute to communicate with left or right rank instead of casing under odd or even phase
@@ -252,18 +276,30 @@ void Solver::odd_even_sort_mpi() {
             // Pre-check if the two ranks are well-sorted
             TIMING_LOG_MULTI_COMM_START("mpi_exchange_1", world_rank, p, world_rank, left_rank);
             TIMING_START(mpi_exchange_1);
-            MPI_Sendrecv(local_data, 1, MPI_FLOAT, left_rank, 0, neighbor_data + local_size - 1, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            fill_chunk_pivot_val(local_data, chunk_count, chunk_pivot, chunk_pivot_val);
+            MPI_Sendrecv(chunk_pivot_val, chunk_count, MPI_FLOAT, left_rank, 0, neighbor_chunk_pivot_val, chunk_count, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             TIMING_ACCUM(mpi_exchange_1);
             TIMING_LOG_MULTI_COMM_END("mpi_exchange_1", world_rank, p, world_rank, left_rank);
-            if (*(neighbor_data + local_size - 1) <= *local_data) {
+            if (*(neighbor_chunk_pivot_val + chunk_count - 1) <= *local_data) {
                 // Skip since sorted
                 continue;
             }
-            // Exchange data
+            *(neighbor_data + local_size - 1) = *(neighbor_chunk_pivot_val + chunk_count - 1);
             if (local_size > 1) {
+                // Get local chunk pivot and neighbor chunk pivot
+                TIMING_LOG_MULTI_COMM_START("local_get_pivot", world_rank, p, world_rank, left_rank);
+                TIMING_START(local_get_pivot);
+                get_left_chunk_pivot(chunk_count, chunk_pivot, neighbor_chunk_pivot_val, *local_data, left_pivot);
+                get_right_chunk_pivot(chunk_count, chunk_pivot, chunk_pivot_val, *(neighbor_data + local_size - 1), right_pivot);
+                TIMING_ACCUM(local_get_pivot);
+                TIMING_LOG_MULTI_COMM_END("local_get_pivot", world_rank, p, world_rank, left_rank);
+                // Exchange data
                 TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, left_rank);
                 TIMING_START(mpi_exchange_2);
-                MPI_Sendrecv(local_data + 1, local_size - 1, MPI_FLOAT, left_rank, 0, neighbor_data, local_size - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Sendrecv(local_data, right_pivot, MPI_FLOAT, left_rank, 0, neighbor_data + left_pivot, local_size - left_pivot, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                if (left_pivot > 0) {
+                    *(neighbor_data + left_pivot - 1) = std::numeric_limits<float>::min();
+                }
                 TIMING_ACCUM(mpi_exchange_2);
                 TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, left_rank);
             }
@@ -280,18 +316,30 @@ void Solver::odd_even_sort_mpi() {
             // Pre-check if the two ranks are well-sorted
             TIMING_LOG_MULTI_COMM_START("mpi_exchange_1", world_rank, p, world_rank, right_rank);
             TIMING_START(mpi_exchange_1);
-            MPI_Sendrecv(local_data + local_size - 1, 1, MPI_FLOAT, right_rank, 0, neighbor_data, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            fill_chunk_pivot_val(local_data, chunk_count, chunk_pivot, chunk_pivot_val);
+            MPI_Sendrecv(chunk_pivot_val, chunk_count, MPI_FLOAT, right_rank, 0, neighbor_chunk_pivot_val, chunk_count, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             TIMING_ACCUM(mpi_exchange_1);
             TIMING_LOG_MULTI_COMM_END("mpi_exchange_1", world_rank, p, world_rank, right_rank);
-            if (*(local_data + local_size - 1) <= *neighbor_data) {
+            if (*(local_data + local_size - 1) <= *neighbor_chunk_pivot_val) {
                 // Skip since sorted
                 continue;
             }
-            // Exchange data
+            *neighbor_data = *neighbor_chunk_pivot_val;
             if (local_size > 1) {
+                // Get local chunk pivot and neighbor chunk pivot
+                TIMING_LOG_MULTI_COMM_START("local_get_pivot", world_rank, p, world_rank, right_rank);
+                TIMING_START(local_get_pivot);
+                get_left_chunk_pivot(chunk_count, chunk_pivot, chunk_pivot_val, *neighbor_data, left_pivot);
+                get_right_chunk_pivot(chunk_count, chunk_pivot, neighbor_chunk_pivot_val, *(local_data + local_size - 1), right_pivot);
+                TIMING_ACCUM(local_get_pivot);
+                TIMING_LOG_MULTI_COMM_END("local_get_pivot", world_rank, p, world_rank, right_rank);
+                // Exchange data
                 TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, right_rank);
                 TIMING_START(mpi_exchange_2);
-                MPI_Sendrecv(local_data, local_size - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, local_size - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Sendrecv(local_data + left_pivot, local_size - left_pivot, MPI_FLOAT, right_rank, 0, neighbor_data, right_pivot, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                if (right_pivot < local_size) {
+                    *(neighbor_data + right_pivot) = std::numeric_limits<float>::max();
+                }
                 TIMING_ACCUM(mpi_exchange_2);
                 TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, right_rank);
             }
@@ -306,6 +354,7 @@ void Solver::odd_even_sort_mpi() {
     TIMING_FIN(mpi_exchange_1, world_rank);
     TIMING_FIN(mpi_exchange_2, world_rank);
     TIMING_FIN(local_merge, world_rank);
+    TIMING_FIN(local_get_pivot, world_rank);
     // === odd-even sort end ===
 
     TIMING_LOG_ONCE_START("mpi_write", world_rank);
@@ -317,7 +366,36 @@ void Solver::odd_even_sort_mpi() {
     MPI_File_close(&output_file);
     TIMING_END(mpi_write, world_rank);
     TIMING_LOG_ONCE_END("mpi_write", world_rank);
+    delete[] chunk_pivot;
     delete[] buffer;
+}
+
+void Solver::fill_chunk_pivot_val(float *data, int chunk_count, int *chunk_pivot, float *chunk_pivot_val) {
+    for (int i = 0; i < chunk_count; i++) {
+        chunk_pivot_val[i] = data[chunk_pivot[i]];
+    }
+}
+
+void Solver::get_left_chunk_pivot(int chunk_count, int *chunk_pivot, float *chunk_pivot_val, float target, int &pivot) {
+    for (int i = chunk_count - 1; i > 0; i--) {
+        if (target > chunk_pivot_val[i]) {
+            pivot = chunk_pivot[i];
+            return;
+        }
+    }
+    pivot = chunk_pivot[0];
+    return;
+}
+
+void Solver::get_right_chunk_pivot(int chunk_count, int *chunk_pivot, float *chunk_pivot_val, float target, int &pivot) {
+    for (int i = 0; i < chunk_count - 1; i++) {
+        if (target < chunk_pivot_val[i]) {
+            pivot = chunk_pivot[i] + 1;
+            return;
+        }
+    }
+    pivot = chunk_pivot[chunk_count - 1] + 1;
+    return;
 }
 
 void Solver::merge_left(int n, float *&left, float *&right, float *&buffer) {
