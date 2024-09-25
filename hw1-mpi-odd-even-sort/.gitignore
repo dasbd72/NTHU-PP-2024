@@ -295,3 +295,5 @@ pyrightconfig.json
 hw1
 env/*
 !env/env.template.sh
+tests/*
+!tests/*.cc
