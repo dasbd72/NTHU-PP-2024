@@ -108,7 +108,9 @@ def parse_logs(log_file):
     return logs
 
 
-def plot_gantt_chart(logs: list[dict]):
+def plot_gantt_chart(
+    logs: list[dict], file_path: str = "outputs/gantt_chart.html"
+):
     df = pd.DataFrame(logs)
     fig = px.timeline(
         df,
@@ -118,16 +120,16 @@ def plot_gantt_chart(logs: list[dict]):
         color="task",
         hover_data="desc",
     )
-    fig.write_image("outputs/gantt_chart.png")
-    fig.write_html("outputs/gantt_chart.html")
+    fig.write_html(file_path)
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    if not args.log:
+    log_path: str = args.log
+    if not log_path:
         raise ValueError("Log file not provided")
-    if not os.path.exists(args.log):
+    if not os.path.exists(log_path):
         raise ValueError("Log file does not exist")
 
-    logs = parse_logs(args.log)
-    plot_gantt_chart(logs)
+    logs = parse_logs(log_path)
+    plot_gantt_chart(logs, f"{log_path.split('.')[0]}.html")
