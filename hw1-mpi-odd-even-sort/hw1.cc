@@ -98,9 +98,12 @@ class Solver {
     int array_size = 0;
     char *input_filename = nullptr;
     char *output_filename = nullptr;
+    // Optimization: send/recv only necessary counts
+    void send_count_left(int n, float *data, float target, int &count);
+    void send_count_right(int n, float *data, float target, int &count);
     // Optimization: Merge only to the left or right to reduce number of elements to be copied
-    void merge_left(int n, float *&left, float *&right, float *&buffer);
-    void merge_right(int n, float *&left, float *&right, float *&buffer);
+    void merge_left(int n, int recv_count, float *&left, float *&right, float *&buffer);
+    void merge_right(int n, int recv_count, float *&left, float *&right, float *&buffer);
 };
 
 int main(int argc, char **argv) {
@@ -179,7 +182,7 @@ void Solver::odd_even_sort_mpi() {
     // Optimization: Use one contiguous buffer
     // Optimization: Use pointers to represent each part of the buffer to enable swapping without copying
     float *buffer, *local_data, *neighbor_data, *merge_buffer;
-    int left_rank, right_rank;
+    int left_rank, right_rank, send_count, recv_count;
 
     local_size = std::min(array_size, std::max((int)ceil((double)array_size / world_size), MIN_SIZE_PER_PROC));
     local_start = std::min(array_size, world_rank * local_size);
@@ -235,6 +238,7 @@ void Solver::odd_even_sort_mpi() {
     TIMING_LOG_ONCE_END("local_sort", world_rank);
     TIMING_INIT(mpi_exchange_1);
     TIMING_INIT(mpi_exchange_2);
+    TIMING_INIT(mpi_exchange_3);
     TIMING_INIT(local_merge);
     // Initialize neighbor buffer
     for (int p = 0; p < actual_world_size; p++) {
@@ -259,18 +263,25 @@ void Solver::odd_even_sort_mpi() {
                 // Skip since sorted
                 continue;
             }
-            // Exchange data
             if (local_size > 1) {
+                // Exchange send/recv count
                 TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, left_rank);
                 TIMING_START(mpi_exchange_2);
-                MPI_Sendrecv(local_data + 1, local_size - 1, MPI_FLOAT, left_rank, 0, neighbor_data, local_size - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                send_count_right(local_size, local_data, *(neighbor_data + local_size - 1), send_count);
+                MPI_Sendrecv(&send_count, 1, MPI_FLOAT, left_rank, 0, &recv_count, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 TIMING_ACCUM(mpi_exchange_2);
                 TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, left_rank);
+                // Exchange data
+                TIMING_LOG_MULTI_COMM_START("mpi_exchange_3", world_rank, p, world_rank, left_rank);
+                TIMING_START(mpi_exchange_3);
+                MPI_Sendrecv(local_data + 1, send_count - 1, MPI_FLOAT, left_rank, 0, neighbor_data + (local_size - recv_count), recv_count - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                TIMING_ACCUM(mpi_exchange_3);
+                TIMING_LOG_MULTI_COMM_END("mpi_exchange_3", world_rank, p, world_rank, left_rank);
             }
             // Merge
             TIMING_LOG_MULTI_COMM_START("local_merge", world_rank, p, world_rank, left_rank);
             TIMING_START(local_merge);
-            merge_right(local_size, neighbor_data, local_data, merge_buffer);
+            merge_right(local_size, recv_count, neighbor_data, local_data, merge_buffer);
             TIMING_ACCUM(local_merge);
             TIMING_LOG_MULTI_COMM_END("local_merge", world_rank, p, world_rank, left_rank);
         } else {
@@ -287,24 +298,32 @@ void Solver::odd_even_sort_mpi() {
                 // Skip since sorted
                 continue;
             }
-            // Exchange data
             if (local_size > 1) {
+                // Exchange send/recv count
                 TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, right_rank);
                 TIMING_START(mpi_exchange_2);
-                MPI_Sendrecv(local_data, local_size - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, local_size - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                send_count_left(local_size, local_data, *neighbor_data, send_count);
+                MPI_Sendrecv(&send_count, 1, MPI_FLOAT, right_rank, 0, &recv_count, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 TIMING_ACCUM(mpi_exchange_2);
                 TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, right_rank);
+                // Exchange data
+                TIMING_LOG_MULTI_COMM_START("mpi_exchange_3", world_rank, p, world_rank, right_rank);
+                TIMING_START(mpi_exchange_3);
+                MPI_Sendrecv(local_data + (local_size - send_count), send_count - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, recv_count - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                TIMING_ACCUM(mpi_exchange_3);
+                TIMING_LOG_MULTI_COMM_END("mpi_exchange_3", world_rank, p, world_rank, right_rank);
             }
             // Merge
             TIMING_LOG_MULTI_COMM_START("local_merge", world_rank, p, world_rank, right_rank);
             TIMING_START(local_merge);
-            merge_left(local_size, local_data, neighbor_data, merge_buffer);
+            merge_left(local_size, recv_count, local_data, neighbor_data, merge_buffer);
             TIMING_ACCUM(local_merge);
             TIMING_LOG_MULTI_COMM_END("local_merge", world_rank, p, world_rank, right_rank);
         }
     }
     TIMING_FIN(mpi_exchange_1, world_rank);
     TIMING_FIN(mpi_exchange_2, world_rank);
+    TIMING_FIN(mpi_exchange_3, world_rank);
     TIMING_FIN(local_merge, world_rank);
     // === odd-even sort end ===
 
@@ -320,28 +339,74 @@ void Solver::odd_even_sort_mpi() {
     delete[] buffer;
 }
 
-void Solver::merge_left(int n, float *&left, float *&right, float *&buffer) {
+/*
+    Binary search to find the count of elements less than target
+
+    target will be less than at least one element in data
+ */
+void Solver::send_count_left(int n, float *data, float target, int &count) {
+    if (target < data[0]) {
+        count = n;
+        return;
+    }
+    int l = 0, r = n;
+    while (l < r) {
+        int m = l + (r - l) / 2;
+        if (data[m] >= target) {
+            r = m;  // Look for the first element that is greater than or equal to target
+        } else {
+            l = m + 1;  // Move right if data[m] < target
+        }
+    }
+    // 'l' now points to the first element that is greater than or equal to 'target'
+    count = n - l;
+}
+
+/*
+    Binary search to find the count of elements less than or equal to target
+
+    target will be larger than at least one element in data
+ */
+void Solver::send_count_right(int n, float *data, float target, int &count) {
+    if (target < data[0]) {
+        count = 0;
+        return;
+    }
+    int l = 0, r = n;
+    while (l < r) {
+        int m = l + (r - l) / 2;
+        if (data[m] <= target) {
+            l = m + 1;  // Move right because data[m] is less than or equal to target
+        } else {
+            r = m;  // Move left because data[m] is greater than target
+        }
+    }
+    // 'l' will point to the first element greater than 'target', so count is the number of elements <= target
+    count = l;
+}
+
+void Solver::merge_left(int n, int recv_count, float *&left, float *&right, float *&buffer) {
     int l = 0;
     int r = 0;
 #pragma GCC unroll 8
     for (int i = 0; i < n; i++) {
-        if (left[l] < right[r]) {
-            buffer[i] = left[l];
-            l++;
-        } else {
+        if (r < recv_count && left[l] > right[r]) {
             buffer[i] = right[r];
             r++;
+        } else {
+            buffer[i] = left[l];
+            l++;
         }
     }
     std::swap(left, buffer);
 }
 
-void Solver::merge_right(int n, float *&left, float *&right, float *&buffer) {
+void Solver::merge_right(int n, int recv_count, float *&left, float *&right, float *&buffer) {
     int l = n - 1;
     int r = n - 1;
 #pragma GCC unroll 8
     for (int i = n - 1; i >= 0; i--) {
-        if (left[l] > right[r]) {
+        if (l >= n - recv_count && left[l] > right[r]) {
             buffer[i] = left[l];
             l--;
         } else {
