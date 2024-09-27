@@ -166,9 +166,17 @@ inline void Solver::param_init() {
         // Give the best way to let A_n ~= A_m for all n, m belongs to [0, k]
 
         pivots = new ull[sizeof(ull) * (size + 1)];
-        const int method = 1;
+        const int method = 2;
 
         if (method == 0) {
+            // Equal width method
+            const ull width = (r - hf_x) / size;
+            pivots[0] = hf_x;
+            for (int i = 1; i < size; i++) {
+                pivots[i] = hf_x + width * i;
+            }
+            pivots[size] = r;
+        } else if (method == 1) {
             // Arithmetic sequence method
             const double factor = 0.62;
             const double sum_weights = size * 1.0 + factor * (size - 1) * size / 2;  // Sum of weights
