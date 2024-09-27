@@ -286,7 +286,7 @@ inline void Solver::finalize_pixels(ull& pixels) {
     if (pixels > half_max_ull)
         pixels %= k;
     pixels += (hf_x * hf_x) % k;
-    if (pixels > half_max_ull)
+    if (pixels > half_max_ull / 2)
         pixels %= k;
     pixels = (4 * pixels) % k;
 }
