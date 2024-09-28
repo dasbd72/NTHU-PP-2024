@@ -292,5 +292,8 @@ pyrightconfig.json
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 hw2
+hw2a
+hw2b
 env/*
 !env/env.template.sh
+outputs/*
