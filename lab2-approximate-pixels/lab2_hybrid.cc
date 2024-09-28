@@ -153,7 +153,7 @@ int Solver::solve(int argc, char** argv) {
         TIMING_END(param_init);
     }
 
-    if (size == 1 || r <= 21474) {
+    if (size == 1 || r <= (ull)(21474 * ncpus)) {
         if (rank == 0)
             exec_seq();
     } else {
