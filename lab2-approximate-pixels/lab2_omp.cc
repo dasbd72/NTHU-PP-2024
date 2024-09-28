@@ -328,12 +328,31 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
     // OpenMP version
     const ull batch_size = std::min((ull)1000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
     ull pxls = 0;
-#pragma omp parallel for reduction(+ : pxls)
-    for (ull local_start = start; local_start < end; local_start += batch_size) {
+    ull thread_pxls[ncpus];
+    ull shared_start = start;
+#pragma omp parallel reduction(+ : pxls)
+    {
+        ull thread_id = omp_get_thread_num();
+        thread_pxls[thread_id] = 0;
+        ull local_start = 0;
+        ull local_end = 0;
         ull local_pxls = 0;
-        ull local_end = std::min(end, local_start + batch_size);
-        partial_pixels_single_thread(local_start, local_end, local_pxls);
-        pxls += local_pxls;
+        while (true) {
+#pragma omp critical
+            {
+                local_start = shared_start;
+                shared_start += batch_size;
+            }
+            if (local_start >= end) {
+                break;
+            }
+            local_end = std::min(end, local_start + batch_size);
+            partial_pixels_single_thread(local_start, local_end, local_pxls);
+            thread_pxls[thread_id] += local_pxls;
+        }
+    }
+    for (int i = 0; i < ncpus; i++) {
+        pxls += thread_pxls[i];
     }
     pixels = pxls;
 #else
