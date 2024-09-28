@@ -3,6 +3,7 @@ import signal
 import shutil
 import time
 
+from .sync import sync
 from .build import build
 
 FILES = ["Makefile", "modules.list"]
@@ -12,6 +13,7 @@ JUDGE_FILES = {
     "lab2_hybrid-judge": ["lab2_hybrid.cc"],
 }
 JUDGES = []
+
 
 def signal_int(signum, frame):
     print("Exiting...")
@@ -53,5 +55,6 @@ def judge_loop():
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_int)
+    sync()
     copy_move()
     judge_loop()
