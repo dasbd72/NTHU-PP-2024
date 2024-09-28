@@ -279,9 +279,12 @@ inline void Solver::exec_mpi() {
 }
 
 inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
+#if MULTITHREADED == 1 || MULTITHREADED == 2
+    const ull batch_size = std::min((ull)10000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
+#endif
+
 #if MULTITHREADED == 1
     // Pthreads version
-    const ull batch_size = std::min((ull)1000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
     ull pxls = 0;
     ull shared_start = start;
     pthread_mutex_t mutex;
@@ -326,7 +329,6 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
     pixels = pxls;
 #elif MULTITHREADED == 2
     // OpenMP version
-    const ull batch_size = std::min((ull)1000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
     ull pxls = 0;
     ull thread_pxls[ncpus];
     ull shared_start = start;
