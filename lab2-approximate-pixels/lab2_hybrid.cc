@@ -265,32 +265,36 @@ inline void Solver::exec_mpi() {
 
 inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
 #if MULTITHREADED == 1 || MULTITHREADED == 2
-    const ull batch_size = std::min((ull)10000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
+    const int nthreads = ncpus;
+    const ull batch_size = std::min((ull)10000, (ull)ceil((double)(end - start) / nthreads));  // Prevent batch size too large
 #endif
 
 #if MULTITHREADED == 1
     // Pthreads version
-    ull pxls = 0;
-    ull shared_start = start;
-    pthread_mutex_t mutex;
-    pthread_mutex_init(&mutex, NULL);
-    pthread_t threads[ncpus];
-    struct thread_data {
-        Solver* solver;
-        ull batch_size;
-        ull end;
-        ull* shared_start;
-        pthread_mutex_t* mutex;
-        ull pxls;
-    } thread_data_array[ncpus];
-    for (int i = 0; i < ncpus; i++) {
-        thread_data_array[i].solver = this;
-        thread_data_array[i].batch_size = batch_size;
-        thread_data_array[i].end = end;
-        thread_data_array[i].shared_start = &shared_start;
-        thread_data_array[i].mutex = &mutex;
-        thread_data_array[i].pxls = 0;
-        pthread_create(&threads[i], NULL, [](void* arg) -> void* {
+    if (nthreads == 1) {
+        partial_pixels_single_thread(start, end, pixels);
+    } else {
+        ull pxls = 0;
+        ull shared_start = start;
+        pthread_mutex_t mutex;
+        pthread_mutex_init(&mutex, NULL);
+        pthread_t threads[nthreads];
+        struct thread_data {
+            Solver* solver;
+            ull batch_size;
+            ull end;
+            ull* shared_start;
+            pthread_mutex_t* mutex;
+            ull pxls;
+        } thread_data_array[nthreads];
+        for (int i = 0; i < nthreads; i++) {
+            thread_data_array[i].solver = this;
+            thread_data_array[i].batch_size = batch_size;
+            thread_data_array[i].end = end;
+            thread_data_array[i].shared_start = &shared_start;
+            thread_data_array[i].mutex = &mutex;
+            thread_data_array[i].pxls = 0;
+            pthread_create(&threads[i], NULL, [](void* arg) -> void* {
             thread_data* data = (thread_data*)arg;
             ull pxls = 0;
             while (true) {
@@ -306,42 +310,47 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
                 data->pxls += pxls;
             }
             return NULL; }, (void*)&thread_data_array[i]);
+        }
+        for (int i = 0; i < nthreads; i++) {
+            pthread_join(threads[i], NULL);
+            pxls += thread_data_array[i].pxls;
+        }
+        pixels = pxls;
     }
-    for (int i = 0; i < ncpus; i++) {
-        pthread_join(threads[i], NULL);
-        pxls += thread_data_array[i].pxls;
-    }
-    pixels = pxls;
 #elif MULTITHREADED == 2
     // OpenMP version
-    ull pxls = 0;
-    ull thread_pxls[ncpus];
-    ull shared_start = start;
-#pragma omp parallel num_threads(ncpus) shared(shared_start, thread_pxls)
-    {
-        ull thread_id = omp_get_thread_num();
-        thread_pxls[thread_id] = 0;
-        ull local_start = 0;
-        ull local_end = 0;
-        ull local_pxls = 0;
-        while (true) {
+    if (nthreads == 1) {
+        partial_pixels_single_thread(start, end, pixels);
+    } else {
+        ull pxls = 0;
+        ull thread_pxls[nthreads];
+        ull shared_start = start;
+#pragma omp parallel num_threads(nthreads) shared(shared_start, thread_pxls)
+        {
+            ull thread_id = omp_get_thread_num();
+            thread_pxls[thread_id] = 0;
+            ull local_start = 0;
+            ull local_end = 0;
+            ull local_pxls = 0;
+            while (true) {
 #pragma omp critical
-            {
-                local_start = shared_start;
-                shared_start += batch_size;
+                {
+                    local_start = shared_start;
+                    shared_start += batch_size;
+                }
+                if (local_start >= end) {
+                    break;
+                }
+                local_end = std::min(end, local_start + batch_size);
+                partial_pixels_single_thread(local_start, local_end, local_pxls);
+                thread_pxls[thread_id] += local_pxls;
             }
-            if (local_start >= end) {
-                break;
-            }
-            local_end = std::min(end, local_start + batch_size);
-            partial_pixels_single_thread(local_start, local_end, local_pxls);
-            thread_pxls[thread_id] += local_pxls;
         }
+        for (int i = 0; i < nthreads; i++) {
+            pxls += thread_pxls[i];
+        }
+        pixels = pxls;
     }
-    for (int i = 0; i < ncpus; i++) {
-        pxls += thread_pxls[i];
-    }
-    pixels = pxls;
 #else
     // Sequential version
     partial_pixels_single_thread(start, end, pixels);
