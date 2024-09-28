@@ -330,7 +330,7 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
     ull pxls = 0;
     ull thread_pxls[ncpus];
     ull shared_start = start;
-#pragma omp parallel reduction(+ : pxls)
+#pragma omp parallel num_threads(ncpus) shared(shared_start, thread_pxls)
     {
         ull thread_id = omp_get_thread_num();
         thread_pxls[thread_id] = 0;
