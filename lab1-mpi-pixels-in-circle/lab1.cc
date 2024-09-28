@@ -1,10 +1,19 @@
 #include <assert.h>
 #include <math.h>
-#include <mpi.h>
 #include <stdio.h>
 
 #include <iostream>
 #include <limits>
+
+#if MULTITHREADED == 1
+#include <pthread.h>
+#elif MULTITHREADED == 2
+#include <omp.h>
+#endif
+
+#ifdef MPI_ENABLED
+#include <mpi.h>
+#endif
 
 #ifdef DEBUG
 #define DEBUG_MSG(str) std::cerr << str << "\n";
@@ -80,6 +89,7 @@ class Solver {
 
     int rank = 0;
     int size = 1;
+    int ncpus = 1;
     ull r;
     ull k;
     ull sq_r;
@@ -90,6 +100,7 @@ class Solver {
     inline void exec_mpi();
     inline void param_init();
     inline void partial_pixels(ull start, ull end, ull& pixels);
+    inline void partial_pixels_single_thread(ull start, ull end, ull& pixels);
     inline void finalize_pixels(ull& pixels);
 };
 
@@ -113,11 +124,26 @@ int Solver::solve(int argc, char** argv) {
         return 1;
     }
 
+#ifdef MPI_ENABLED
     TIMING_START(mpi_init);
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     TIMING_END(mpi_init);
+#else
+    rank = 0;
+    size = 1;
+#endif
+
+#if MULTITHREADED == 1
+    cpu_set_t cpuset;
+    sched_getaffinity(0, sizeof(cpuset), &cpuset);
+    ncpus = CPU_COUNT(&cpuset);
+#elif MULTITHREADED == 2
+    ncpus = omp_get_max_threads();
+#else
+    ncpus = 1;
+#endif
 
     r = atoll(argv[1]);
     k = atoll(argv[2]);
@@ -133,9 +159,11 @@ int Solver::solve(int argc, char** argv) {
     } else {
         exec_mpi();
     }
+#ifdef MPI_ENABLED
     // TIMING_START(mpi_finallize);
     // MPI_Finalize();
     // TIMING_END(mpi_finallize);
+#endif
     return 0;
 }
 
@@ -214,6 +242,7 @@ inline void Solver::param_init() {
 }
 
 inline void Solver::exec_mpi() {
+#ifdef MPI_ENABLED
     TIMING_START(mpi_all);
     ull pixels = 0;
     ull* remote_pixels = nullptr;
@@ -243,9 +272,77 @@ inline void Solver::exec_mpi() {
     if (rank == 0) {
         TIMING_END(mpi_all);
     }
+#else
+    std::cerr << "MPI is not enabled!\n";
+    return;
+#endif
 }
 
 inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
+#if MULTITHREADED == 1
+    // Pthreads version
+    const ull batch_size = std::min((ull)1000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
+    ull pxls = 0;
+    ull shared_start = start;
+    pthread_mutex_t mutex;
+    pthread_mutex_init(&mutex, NULL);
+    pthread_t threads[ncpus];
+    struct thread_data {
+        Solver* solver;
+        ull batch_size;
+        ull end;
+        ull* shared_start;
+        pthread_mutex_t* mutex;
+        ull pxls;
+    } thread_data_array[ncpus];
+    for (int i = 0; i < ncpus; i++) {
+        thread_data_array[i].solver = this;
+        thread_data_array[i].batch_size = batch_size;
+        thread_data_array[i].end = end;
+        thread_data_array[i].shared_start = &shared_start;
+        thread_data_array[i].mutex = &mutex;
+        thread_data_array[i].pxls = 0;
+        pthread_create(&threads[i], NULL, [](void* arg) -> void* {
+            thread_data* data = (thread_data*)arg;
+            ull pxls = 0;
+            while (true) {
+                pthread_mutex_lock(data->mutex);
+                ull local_start = *data->shared_start;
+                *data->shared_start += data->batch_size;
+                pthread_mutex_unlock(data->mutex);
+                if (local_start >= data->end) {
+                    break;
+                }
+                ull local_end = std::min(data->end, local_start + data->batch_size);
+                data->solver->partial_pixels_single_thread(local_start, local_end, pxls);
+                data->pxls += pxls;
+            }
+            return NULL; }, (void*)&thread_data_array[i]);
+    }
+    for (int i = 0; i < ncpus; i++) {
+        pthread_join(threads[i], NULL);
+        pxls += thread_data_array[i].pxls;
+    }
+    pixels = pxls;
+#elif MULTITHREADED == 2
+    // OpenMP version
+    const ull batch_size = std::min((ull)1000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
+    ull pxls = 0;
+#pragma omp parallel for reduction(+ : pxls)
+    for (ull local_start = start; local_start < end; local_start += batch_size) {
+        ull local_pxls = 0;
+        ull local_end = std::min(end, local_start + batch_size);
+        partial_pixels_single_thread(local_start, local_end, local_pxls);
+        pxls += local_pxls;
+    }
+    pixels = pxls;
+#else
+    // Sequential version
+    partial_pixels_single_thread(start, end, pixels);
+#endif
+}
+
+inline void Solver::partial_pixels_single_thread(ull start, ull end, ull& pixels) {
     const ull sq_r = r * r;
     ull pxls = 0;
     ull x = start;

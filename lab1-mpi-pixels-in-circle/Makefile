@@ -1,26 +1,29 @@
 CC = mpicc
 CXX = mpicxx
-CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -march=native
-CFLAGS = -O3
+CFLAGS = -O3 -Wall -Wextra -march=native -DMPI_ENABLED
 TARGETS = lab1
 
+ifeq ($(VECTORIZE_VERBOSE), 1)
+	CFLAGS += -fopt-info-vec-all
+endif
+
 ifeq ($(TIMING), 1)
-	CXXFLAGS += -DTIMING
+	CFLAGS += -DTIMING
 endif
 
 ifeq ($(DEBUG), 1)
-	CXXFLAGS += -DDEBUG
+	CFLAGS += -DDEBUG
 endif
 
 ifeq ($(SANITIZE), 1)
-	CXXFLAGS += -g
-else ifeq ($(DEBUG), 1)
-	CXXFLAGS += -g
+	CFLAGS += -g
 endif
 
 ifeq ($(SANITIZE), 1)
-	CXXFLAGS += -fsanitize=address -fsanitize=undefined
+	CFLAGS += -fsanitize=address -fsanitize=undefined
 endif
+
+CXXFLAGS = $(CFLAGS) -std=c++17
 
 .PHONY: all
 all: $(TARGETS)
