@@ -24,40 +24,25 @@
 
 #ifdef TIMING
 #include <ctime>
-#define TIMING_START(arg)          \
-    struct timespec __start_##arg; \
-    clock_gettime(CLOCK_MONOTONIC, &__start_##arg);
-#define TIMING_END(arg)                                                                       \
-    {                                                                                         \
-        struct timespec __temp_##arg, __end_##arg;                                            \
-        double __duration_##arg;                                                              \
-        clock_gettime(CLOCK_MONOTONIC, &__end_##arg);                                         \
-        if ((__end_##arg.tv_nsec - __start_##arg.tv_nsec) < 0) {                              \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec - 1;              \
-            __temp_##arg.tv_nsec = 1000000000 + __end_##arg.tv_nsec - __start_##arg.tv_nsec;  \
-                                                                                              \
-        } else {                                                                              \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec;                  \
-            __temp_##arg.tv_nsec = __end_##arg.tv_nsec - __start_##arg.tv_nsec;               \
-        }                                                                                     \
-        __duration_##arg = __temp_##arg.tv_sec + (double)__temp_##arg.tv_nsec / 1000000000.0; \
-        std::cerr << #arg << " " << rank << " took " << __duration_##arg << "s.\n";           \
-        std::cerr.flush();                                                                    \
+double get_timestamp() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1000000000.0;
+}
+#define TIMING_START(arg) \
+    double __start_##arg = get_timestamp();
+#define TIMING_END(arg)                                                             \
+    {                                                                               \
+        double __end_##arg = get_timestamp();                                       \
+        double __duration_##arg = __end_##arg - __start_##arg;                      \
+        std::cerr << #arg << " " << rank << " took " << __duration_##arg << "s.\n"; \
+        std::cerr.flush();                                                          \
     }
 #define TIMING_INIT(arg) double __duration_##arg = 0;
-#define TIMING_ACCUM(arg)                                                                      \
-    {                                                                                          \
-        struct timespec __temp_##arg, __end_##arg;                                             \
-        clock_gettime(CLOCK_MONOTONIC, &__end_##arg);                                          \
-        if ((__end_##arg.tv_nsec - __start_##arg.tv_nsec) < 0) {                               \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec - 1;               \
-            __temp_##arg.tv_nsec = 1000000000 + __end_##arg.tv_nsec - __start_##arg.tv_nsec;   \
-                                                                                               \
-        } else {                                                                               \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec;                   \
-            __temp_##arg.tv_nsec = __end_##arg.tv_nsec - __start_##arg.tv_nsec;                \
-        }                                                                                      \
-        __duration_##arg += __temp_##arg.tv_sec + (double)__temp_##arg.tv_nsec / 1000000000.0; \
+#define TIMING_ACCUM(arg)                                      \
+    {                                                          \
+        double __end_##arg = get_timestamp();                  \
+        double __duration_##arg = __end_##arg - __start_##arg; \
     }
 #define TIMING_FIN(arg)                                          \
     std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
