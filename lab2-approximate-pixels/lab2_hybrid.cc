@@ -135,14 +135,14 @@ int Solver::solve(int argc, char** argv) {
     size = 1;
 #endif
 
-#if MULTITHREADED == 0
-    ncpus = 1;
-#elif MULTITHREADED == 1
+#if MULTITHREADED == 1
     cpu_set_t cpuset;
     sched_getaffinity(0, sizeof(cpuset), &cpuset);
     ncpus = CPU_COUNT(&cpuset);
 #elif MULTITHREADED == 2
     ncpus = omp_get_max_threads();
+#else
+    ncpus = 1;
 #endif
 
     r = atoll(argv[1]);
@@ -279,10 +279,7 @@ inline void Solver::exec_mpi() {
 }
 
 inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
-#if MULTITHREADED == 0
-    // Sequential version
-    partial_pixels_single_thread(start, end, pixels);
-#elif MULTITHREADED == 1
+#if MULTITHREADED == 1
     // Pthreads version
     const ull batch_size = std::min((ull)1000, (ull)ceil((double)(end - start) / ncpus));  // Prevet batch size too large
     ull pxls = 0;
@@ -339,6 +336,9 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
         pxls += local_pxls;
     }
     pixels = pxls;
+#else
+    // Sequential version
+    partial_pixels_single_thread(start, end, pixels);
 #endif
 }
 
