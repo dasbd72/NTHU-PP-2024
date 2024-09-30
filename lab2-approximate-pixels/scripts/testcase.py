@@ -64,11 +64,11 @@ if __name__ == "__main__":
     tc = read_testcase(testcase_txt)
     # Run the program
     if version == "pthread":
-        cmd = f"srun -T {tc['ncpus']} ./lab2_pthread {tc['r']} {tc['k']}"
+        cmd = f"srun -n 1 -c {tc['ncpus']} ./lab2_pthread {tc['r']} {tc['k']}"
     elif version == "omp":
-        cmd = f"srun -T {tc['ncpus']} ./lab2_omp {tc['r']} {tc['k']}"
+        cmd = f"srun -n 1 -c {tc['ncpus']} ./lab2_omp {tc['r']} {tc['k']}"
     elif version == "hybrid":
-        cmd = f"srun -n {tc['nproc']} -T {tc['ncpus']} ./lab2_hybrid {tc['r']} {tc['k']}"
+        cmd = f"srun -n {tc['nproc']} -c {tc['ncpus']} ./lab2_hybrid {tc['r']} {tc['k']}"
     else:
         raise ValueError(f"Invalid version {version}")
     print(cmd)
