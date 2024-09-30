@@ -6,12 +6,13 @@ from typing import Literal
 
 
 class Args:
-    local_dir = False
+    profile: Literal["nsys", "vtune"]
     version: Literal["pthread", "omp", "hybrid"]
     testcase = None
 
 
 args = argparse.ArgumentParser()
+args.add_argument("--profile", type=str, choices=["nsys", "vtune"])
 args.add_argument("version", type=str, choices=["pthread", "omp", "hybrid"])
 args.add_argument("testcase", type=str)
 
@@ -63,14 +64,40 @@ if __name__ == "__main__":
         exit(1)
     tc = read_testcase(testcase_txt)
     # Run the program
-    if version == "pthread":
-        cmd = f"srun -n 1 -c {tc['ncpus']} ./lab2_pthread {tc['r']} {tc['k']}"
-    elif version == "omp":
-        cmd = f"srun -n 1 -c {tc['ncpus']} ./lab2_omp {tc['r']} {tc['k']}"
+    if version == "pthread" or version == "omp":
+        srun_cmd = f"srun -n 1 -c {tc['ncpus']}"
     elif version == "hybrid":
-        cmd = f"srun -n {tc['nproc']} -c {tc['ncpus']} ./lab2_hybrid {tc['r']} {tc['k']}"
+        srun_cmd = f"srun -n {tc['nproc']} -c {tc['ncpus']}"
     else:
         raise ValueError(f"Invalid version {version}")
+    if args.profile == "nsys":
+        os.makedirs("nsys_reports", exist_ok=True)
+        if version == "pthread" or version == "omp":
+            profiler_cmd = f"nsys profile -t nvtx,openmp -f true -o nsys_reports/{version}_{testcase}.nsys-rep --stats=true"
+        elif version == "hybrid":
+            profiler_cmd = f"nsys profile -t mpi,nvtx,openmp -f true -o nsys_reports/{version}_{testcase}.nsys-rep --mpi-impl openmpi --stats=true"
+    elif args.profile == "vtune":
+        os.makedirs("vtune_reports", exist_ok=True)
+        target_path = f"vtune_reports/{version}_{testcase}"
+        for file in os.listdir("vtune_reports"):
+            if file.startswith(f"{version}_{testcase}"):
+                os.system(f"rm -rf vtune_reports/{file}")
+        if version == "pthread" or version == "omp":
+            profiler_cmd = f"vtune -collect hotspots -r {target_path} --"
+        elif version == "hybrid":
+            profiler_cmd = f"vtune -collect hotspots -r {target_path} --"
+    else:
+        profiler_cmd = ""
+    if version == "pthread":
+        program_cmd = "./lab2_pthread"
+    elif version == "omp":
+        program_cmd = "./lab2_omp"
+    elif version == "hybrid":
+        program_cmd = "./lab2_hybrid"
+    else:
+        raise ValueError(f"Invalid version {version}")
+    args_cmd = f"{tc['r']} {tc['k']}"
+    cmd = f"{srun_cmd} {profiler_cmd} {program_cmd} {args_cmd}"
     print(cmd)
     print("=====================================")
     code = os.system(cmd)

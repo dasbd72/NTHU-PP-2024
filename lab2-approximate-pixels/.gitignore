@@ -245,6 +245,8 @@ pyrightconfig.json
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 
+nsys_reports/*
+vtune_reports/*
 lab2_omp
 lab2_pthread
 lab2_hybrid
