@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <immintrin.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -369,6 +370,49 @@ inline void Solver::partial_pixels_single_thread(ull start, ull end, ull& pixels
     ull pxls = 0;
     ull x = start;
     ull y = ceil(sqrtl(sq_r - start * start));
+#if defined(__AVX512F__) && defined(SIMD_ENABLED)
+    const int vector_size = 8;
+    __m512i sq_r_vec = _mm512_set1_epi64(sq_r);
+    ull diff[vector_size];
+    // Optimization: Unroll to reduce modular
+    for (; x + vector_size - 1 < end; x += vector_size) {
+        __m512i x_vec = _mm512_set_epi64(x + 7, x + 6, x + 5, x + 4, x + 3, x + 2, x + 1, x);
+        __m512i x_sq_vec = _mm512_mullo_epi64(x_vec, x_vec);
+        __m512i diff_vec = _mm512_sub_epi64(sq_r_vec, x_sq_vec);
+        _mm512_storeu_si512((__m512i*)diff, diff_vec);
+        // Optimization: Find y by substracting instead of computing ceiling and square root
+#pragma GCC unroll 8
+        for (int i = 0; i < vector_size; i++) {
+            while ((y - 1) * (y - 1) >= diff[i]) {
+                y--;
+            }
+            pxls += y;
+        }
+    }
+    if (pxls > half_max_ull)
+        pxls %= k;
+#elif defined(__AVX256__) && defined(SIMD_ENABLED)
+    const int vector_size = 4;
+    __m256i sq_r_vec = _mm256_set1_epi64x(sq_r);
+    ull diff[vector_size];
+    // Optimization: Unroll to reduce modular
+    for (; x + vector_size - 1 < end; x += vector_size) {
+        __m256i x_vec = _mm256_set_epi64x(x + 3, x + 2, x + 1, x);
+        __m256i x_sq_vec = _mm256_mullo_epi64(x_vec, x_vec);
+        __m256i diff_vec = _mm256_sub_epi64(sq_r_vec, x_sq_vec);
+        _mm256_storeu_si256((__m256i*)diff, diff_vec);
+        // Optimization: Find y by substracting instead of computing ceiling and square root
+#pragma GCC unroll 4
+        for (int i = 0; i < vector_size; i++) {
+            while ((y - 1) * (y - 1) >= diff[i]) {
+                y--;
+            }
+            pxls += y;
+        }
+        if (pxls > half_max_ull)
+            pxls %= k;
+    }
+#else
     // Optimization: Unroll to reduce modular
     for (; x + 3 < end; x += 4) {
         ull diff1 = sq_r - x * x;
@@ -395,6 +439,7 @@ inline void Solver::partial_pixels_single_thread(ull start, ull end, ull& pixels
         if (pxls > half_max_ull)
             pxls %= k;
     }
+#endif
     for (; x < end; x++) {
         ull diff = sq_r - x * x;
         while ((y - 1) * (y - 1) >= diff)

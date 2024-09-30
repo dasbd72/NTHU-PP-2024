@@ -1,6 +1,6 @@
 CC = gcc
 CXX = g++
-CFLAGS = -lm -O3 -Wall -Wextra -march=native
+CFLAGS = -lm -O3 -Wall -Wextra -march=native -DSIMD_ENABLED
 lab2_pthread: CFLAGS += -pthread
 lab2_pthread: CFLAGS += -DMULTITHREADED=1
 lab2_omp: CFLAGS += -fopenmp
