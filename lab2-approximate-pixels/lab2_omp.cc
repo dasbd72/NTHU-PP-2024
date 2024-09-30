@@ -70,6 +70,19 @@ class Solver {
     int solve(int argc, char** argv);
 
    private:
+    struct SharedData {
+        Solver* solver;
+        ull batch_size;
+        ull start;
+        ull end;
+        ull shared_start;
+        pthread_mutex_t mutex;
+    };
+    struct ThreadData {
+        SharedData* shared;
+        ull pxls;
+    };
+
     const ull half_max_ull = std::numeric_limits<ull>::max() / 2;
 
     int rank = 0;
@@ -86,6 +99,7 @@ class Solver {
     inline void param_init();
     inline void partial_pixels(ull start, ull end, ull& pixels);
     inline void partial_pixels_single_thread(ull start, ull end, ull& pixels);
+    static void* pthread_partial_pixels(void* arg);
     inline void finalize_pixels(ull& pixels);
 };
 
@@ -275,41 +289,13 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
         partial_pixels_single_thread(start, end, pixels);
     } else {
         ull pxls = 0;
-        ull shared_start = start;
-        pthread_mutex_t mutex;
-        pthread_mutex_init(&mutex, NULL);
         pthread_t threads[nthreads];
-        struct thread_data {
-            Solver* solver;
-            ull batch_size;
-            ull end;
-            ull* shared_start;
-            pthread_mutex_t* mutex;
-            ull pxls;
-        } thread_data_array[nthreads];
+        SharedData shared = {this, batch_size, start, end, start, PTHREAD_MUTEX_INITIALIZER};
+        ThreadData thread_data_array[nthreads];
         for (int i = 0; i < nthreads; i++) {
-            thread_data_array[i].solver = this;
-            thread_data_array[i].batch_size = batch_size;
-            thread_data_array[i].end = end;
-            thread_data_array[i].shared_start = &shared_start;
-            thread_data_array[i].mutex = &mutex;
+            thread_data_array[i].shared = &shared;
             thread_data_array[i].pxls = 0;
-            pthread_create(&threads[i], NULL, [](void* arg) -> void* {
-            thread_data* data = (thread_data*)arg;
-            ull pxls = 0;
-            while (true) {
-                pthread_mutex_lock(data->mutex);
-                ull local_start = *data->shared_start;
-                *data->shared_start += data->batch_size;
-                pthread_mutex_unlock(data->mutex);
-                if (local_start >= data->end) {
-                    break;
-                }
-                ull local_end = std::min(data->end, local_start + data->batch_size);
-                data->solver->partial_pixels_single_thread(local_start, local_end, pxls);
-                data->pxls += pxls;
-            }
-            return NULL; }, (void*)&thread_data_array[i]);
+            pthread_create(&threads[i], NULL, pthread_partial_pixels, (void*)&thread_data_array[i]);
         }
         for (int i = 0; i < nthreads; i++) {
             pthread_join(threads[i], NULL);
@@ -355,6 +341,27 @@ inline void Solver::partial_pixels(ull start, ull end, ull& pixels) {
     // Sequential version
     partial_pixels_single_thread(start, end, pixels);
 #endif
+}
+
+void* Solver::pthread_partial_pixels(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    SharedData* shared = data->shared;
+    ull local_start = 0;
+    ull local_end = 0;
+    ull local_pxls = 0;
+    while (true) {
+        pthread_mutex_lock(&shared->mutex);
+        local_start = shared->shared_start;
+        shared->shared_start += shared->batch_size;
+        pthread_mutex_unlock(&shared->mutex);
+        if (local_start >= shared->end) {
+            break;
+        }
+        local_end = std::min(shared->end, local_start + shared->batch_size);
+        shared->solver->partial_pixels_single_thread(local_start, local_end, local_pxls);
+        data->pxls += local_pxls;
+    }
+    return NULL;
 }
 
 inline void Solver::partial_pixels_single_thread(ull start, ull end, ull& pixels) {
