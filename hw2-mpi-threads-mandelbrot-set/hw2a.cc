@@ -21,6 +21,53 @@
 #include <mpi.h>
 #endif
 
+#ifdef TIMING
+#include <ctime>
+double get_timestamp() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1000000000.0;
+}
+#define TIMING_START(arg) \
+    double __start_##arg = get_timestamp();
+#define TIMING_END(arg)                                              \
+    {                                                                \
+        double __end_##arg = get_timestamp();                        \
+        double __duration_##arg = __end_##arg - __start_##arg;       \
+        std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
+        std::cerr.flush();                                           \
+    }
+#define TIMING_END_1(arg, i)                                                     \
+    {                                                                            \
+        double __end_##arg = get_timestamp();                                    \
+        double __duration_##arg = __end_##arg - __start_##arg;                   \
+        std::cerr << #arg << " " << i << " took " << __duration_##arg << "s.\n"; \
+        std::cerr.flush();                                                       \
+    }
+#define TIMING_INIT(arg) double __duration_##arg = 0;
+#define TIMING_ACCUM(arg)                                      \
+    {                                                          \
+        double __end_##arg = get_timestamp();                  \
+        double __duration_##arg = __end_##arg - __start_##arg; \
+    }
+#define TIMING_FIN(arg)                                          \
+    std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
+    std::cerr.flush();
+#else
+#define TIMING_START(arg) \
+    {}
+#define TIMING_END(arg) \
+    {}
+#define TIMING_END_1(arg, i) \
+    {}
+#define TIMING_INIT(arg) \
+    {}
+#define TIMING_ACCUM(arg) \
+    {}
+#define TIMING_FIN(arg) \
+    {}
+#endif  // TIMING
+
 class Solver {
    public:
     Solver() {}
@@ -78,6 +125,7 @@ int main(int argc, char** argv) {
 }
 
 int Solver::solve(int argc, char** argv) {
+    TIMING_START(all);
     std::ios::sync_with_stdio(0);
     std::cin.tie(0);
     std::cout.tie(0);
@@ -112,6 +160,7 @@ int Solver::solve(int argc, char** argv) {
     // allocate memory for image
     int* buffer = (int*)malloc(width * height * sizeof(int));
 
+    TIMING_START(mandelbrot);
 #ifdef MPI_ENABLED
     if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
         mandelbrot(buffer);
@@ -121,16 +170,22 @@ int Solver::solve(int argc, char** argv) {
 #else
     mandelbrot(buffer);
 #endif
+    TIMING_END(mandelbrot);
 
     // draw and cleanup
     if (world_rank == 0) {
+        TIMING_START(write_png);
         write_png(buffer);
+        TIMING_END(write_png);
     }
     free(buffer);
 
 #ifdef MPI_ENABLED
+    // TIMING_START(MPI_Finalize);
     // MPI_Finalize();
+    // TIMING_END_1(MPI_Finalize, world_rank);
 #endif
+    TIMING_END(all);
     return 0;
 }
 
@@ -169,7 +224,7 @@ void Solver::mandelbrot_mpi(int* buffer) {
 
 void Solver::partial_mandelbrot(int start_height, int end_height, int* buffer) {
     const int num_threads = num_cpus;
-    const int batch_size = std::min(10, (int)std::ceil((double)height / num_threads));
+    const int batch_size = std::min(1, (int)std::ceil((double)height / num_threads));
 
 // mandelbrot set
 #if MULTITHREADED == 1
@@ -193,6 +248,7 @@ void Solver::partial_mandelbrot(int start_height, int end_height, int* buffer) {
     int shared_height = start_height;
 #pragma omp parallel num_threads(num_threads) shared(shared_height, buffer)
     {
+        TIMING_START(thread);
         while (true) {
             int curr_start_height;
             int curr_end_height;
@@ -207,6 +263,7 @@ void Solver::partial_mandelbrot(int start_height, int end_height, int* buffer) {
             curr_end_height = std::min(curr_start_height + batch_size, end_height);
             partial_mandelbrot_single_thread(curr_start_height, curr_end_height, buffer);
         }
+        TIMING_END_1(thread, omp_get_thread_num());
     }
 #endif
 }
@@ -306,6 +363,7 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
     int* buffer = shared->buffer;
     pthread_mutex_t* mutex = &shared->mutex;
 
+    TIMING_START(thread);
     while (true) {
         int curr_start_height;
         int curr_end_height;
@@ -319,6 +377,7 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
         curr_end_height = std::min(curr_start_height + batch_size, end_height);
         solver->partial_mandelbrot_single_thread(curr_start_height, curr_end_height, buffer);
     }
+    TIMING_END_1(thread, pthread_self());
     return NULL;
 }
 #endif
