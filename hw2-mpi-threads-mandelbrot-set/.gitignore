@@ -222,7 +222,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
+env/*
+!env/env.template.sh
 venv/
 ENV/
 env.bak/
