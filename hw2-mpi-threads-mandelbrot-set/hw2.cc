@@ -2,37 +2,101 @@
 #define _GNU_SOURCE
 #endif
 #define PNG_NO_SETJMP
-#include <assert.h>
 #include <png.h>
 #include <sched.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-void write_png(const char* filename, int iters, int width, int height, const int* buffer);
+#include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#if MULTITHREADED == 1
+#include <pthread.h>
+#endif
+#if MULTITHREADED == 2
+#include <omp.h>
+#endif
+#ifdef MPI_ENABLED
+#include <mpi.h>
+#endif
+
+class Solver {
+   public:
+    Solver() {}
+    ~Solver() {};
+    int solve(int argc, char** argv);
+
+   private:
+    // Arguments
+    char* filename;
+    int iters;
+    double left;
+    double right;
+    double lower;
+    double upper;
+    int width;
+    int height;
+
+    int num_cpus;
+    int world_rank;
+    int world_size;
+
+    void mandelbrot_seq();
+    void write_png(const int* buffer) const;
+};
 
 int main(int argc, char** argv) {
-    /* detect how many CPUs are available */
+    Solver solver;
+    return solver.solve(argc, argv);
+}
+
+int Solver::solve(int argc, char** argv) {
+    std::ios::sync_with_stdio(0);
+    std::cin.tie(0);
+    std::cout.tie(0);
+    if (argc != 9) {
+        std::cerr << "must provide exactly 8 arguments!\n";
+        return 1;
+    }
+
+#ifdef MPI_ENABLED
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+#else
+    world_size = 1;
+    world_rank = 0;
+#endif
+    // detect how many CPUs are available
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
-    printf("%d cpus available\n", CPU_COUNT(&cpu_set));
+    num_cpus = CPU_COUNT(&cpu_set);
 
-    /* argument parsing */
-    assert(argc == 9);
-    const char* filename = argv[1];
-    int iters = strtol(argv[2], 0, 10);
-    double left = strtod(argv[3], 0);
-    double right = strtod(argv[4], 0);
-    double lower = strtod(argv[5], 0);
-    double upper = strtod(argv[6], 0);
-    int width = strtol(argv[7], 0, 10);
-    int height = strtol(argv[8], 0, 10);
+    // argument parsing
+    filename = argv[1];
+    iters = strtol(argv[2], 0, 10);
+    left = strtod(argv[3], 0);
+    right = strtod(argv[4], 0);
+    lower = strtod(argv[5], 0);
+    upper = strtod(argv[6], 0);
+    width = strtol(argv[7], 0, 10);
+    height = strtol(argv[8], 0, 10);
 
-    /* allocate memory for image */
+    if (world_rank == 0) {
+        mandelbrot_seq();
+    }
+
+#ifdef MPI_ENABLED
+    // MPI_Finalize();
+#endif
+    return 0;
+}
+
+void Solver::mandelbrot_seq() {
+    // allocate memory for image
     int* image = (int*)malloc(width * height * sizeof(int));
     assert(image);
 
-    /* mandelbrot set */
+    // mandelbrot set
     for (int j = 0; j < height; ++j) {
         double y0 = j * ((upper - lower) / height) + lower;
         for (int i = 0; i < width; ++i) {
@@ -53,12 +117,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    /* draw and cleanup */
-    write_png(filename, iters, width, height, image);
+    // draw and cleanup
+    write_png(image);
     free(image);
 }
 
-void write_png(const char* filename, int iters, int width, int height, const int* buffer) {
+void Solver::write_png(const int* buffer) const {
     FILE* fp = fopen(filename, "wb");
     assert(fp);
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
