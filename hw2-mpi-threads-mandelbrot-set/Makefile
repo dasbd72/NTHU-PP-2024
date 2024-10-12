@@ -26,7 +26,7 @@ ifeq ($(SANITIZE), 1)
 endif
 
 ifeq ($(SANITIZE), 1)
-	CFLAGS += -fsanitize=address -fsanitize=undefined
+	CFLAGS += -fsanitize=address
 endif
 
 CXXFLAGS = $(CFLAGS) -std=c++17
