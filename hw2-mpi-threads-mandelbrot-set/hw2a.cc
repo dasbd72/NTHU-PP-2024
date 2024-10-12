@@ -75,6 +75,11 @@ double get_timestamp() {
     {}
 #endif  // TIMING
 
+const int max_num_procs = 48;
+const int max_num_cpus = 12;
+const long long min_tasks_per_process = (long long)500 * 1920 * 1080;
+const int min_pixels_per_thread = 100;
+
 class Solver {
    public:
     Solver() {}
@@ -110,12 +115,6 @@ class Solver {
     int num_cpus;
     int world_rank;
     int world_size;
-
-    // Constants
-    static const int max_num_procs = 48;
-    static const int max_num_cpus = 12;
-    static const long long min_tasks_per_process = (long long)500 * 1920 * 1080;
-    static const int min_pixels_per_thread = 100;
 
     void mandelbrot(int* buffer);
 #ifdef MPI_ENABLED
