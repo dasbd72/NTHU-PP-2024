@@ -384,6 +384,7 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
 #endif
 
 void Solver::write_png(const int* buffer) const {
+    TIMING_START(write_png_setup);
     FILE* fp = fopen(filename, "wb");
     assert(fp);
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -396,6 +397,8 @@ void Solver::write_png(const int* buffer) const {
     png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
     png_write_info(png_ptr, info_ptr);
     png_set_compression_level(png_ptr, 0);
+    TIMING_END(write_png_setup);
+    TIMING_START(write_png_loop);
     size_t row_size = 3 * width * sizeof(png_byte);
     png_bytep row = (png_bytep)malloc(row_size);
     for (int y = 0; y < height; ++y) {
@@ -414,8 +417,11 @@ void Solver::write_png(const int* buffer) const {
         }
         png_write_row(png_ptr, row);
     }
+    TIMING_END(write_png_loop);
+    TIMING_START(write_png_cleanup);
     free(row);
     png_write_end(png_ptr, NULL);
     png_destroy_write_struct(&png_ptr, &info_ptr);
     fclose(fp);
+    TIMING_END(write_png_cleanup);
 }
