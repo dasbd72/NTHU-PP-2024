@@ -298,3 +298,5 @@ hw2b
 env/*
 !env/env.template.sh
 outputs/*
+nsys-reports/*
+vtune-reports/*

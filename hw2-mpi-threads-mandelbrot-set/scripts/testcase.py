@@ -11,6 +11,7 @@ class Args:
     testcase_dir = "testcases"
     procs = 1
     cpus = 1
+    profile = "nsys"
     program = "hw2a"
     PROGRAMS = ["hw2a", "hw2b"]
     testcase = None
@@ -22,6 +23,9 @@ args.add_argument("--local-dir", action="store_true")
 args.add_argument("--testcase-dir", type=str, default="testcases")
 args.add_argument("--procs", "-n", type=int, default=1)
 args.add_argument("--cpus", "-c", type=int, default=1)
+args.add_argument(
+    "--profile", type=str, choices=["nsys", "vtune", "none"], default="none"
+)
 args.add_argument("program", type=str, choices=Args.PROGRAMS)
 args.add_argument("testcase", type=str)
 
@@ -66,7 +70,22 @@ if __name__ == "__main__":
     if os.path.exists(outputs_png):
         os.remove(outputs_png)
     # Run the program
-    cmd = f"srun -n {args.procs} -c {args.cpus} ./{args.program} {outputs_png} {tc}"
+    if args.profile == "nsys":
+        if args.program == "hw2a":
+            outputs_report = f"nsys-reports/hw2a/{testcase}"
+            os.makedirs("nsys-reports/hw2a", exist_ok=True)
+            cmd = f"srun -n {args.procs} -c {args.cpus} nsys profile -t openmp,nvtx,ucx,osrt --stats=true -f true -o {outputs_report} ./{args.program} {outputs_png} {tc}"
+        elif args.program == "hw2b":
+            outputs_report = f"nsys-reports/hw2b/{testcase}"
+            os.makedirs("nsys-reports/hw2b", exist_ok=True)
+            cmd = f"srun -n {args.procs} -c {args.cpus} ./scripts/wrapper.sh {outputs_report} ./{args.program} {outputs_png} {tc}"
+    elif args.profile == "vtune":
+        if args.program == "hw2a":
+            outputs_report = f"vtune-reports/hw2a/{testcase}"
+            os.makedirs("vtune-reports/hw2a", exist_ok=True)
+            cmd = f"srun -n {args.procs} -c {args.cpus} vtune -collect hotspots -r {outputs_report} -- ./{args.program} {outputs_png} {tc}"
+    else:
+        cmd = f"srun -n {args.procs} -c {args.cpus} ./{args.program} {outputs_png} {tc}"
     print(cmd)
     print("========== Program Output ==========")
     code = os.system(cmd)
