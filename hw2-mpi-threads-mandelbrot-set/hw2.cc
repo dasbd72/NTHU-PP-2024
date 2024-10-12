@@ -85,6 +85,7 @@ class Solver {
 #if MULTITHREADED == 1
     struct SharedData {
         Solver* solver;
+        int num_threads;
         int batch_size;
         int end_pixel;
         int shared_pixel;
@@ -242,6 +243,7 @@ void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer) {
     pthread_t threads[max_num_cpus];
     SharedData shared_data;
     shared_data.solver = this;
+    shared_data.num_threads = num_threads;
     shared_data.batch_size = batch_size;
     shared_data.end_pixel = end_pixel;
     shared_data.shared_pixel = start_pixel;
@@ -359,7 +361,8 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
     ThreadData* thread_data = (ThreadData*)arg;
     SharedData* shared = thread_data->shared;
     Solver* solver = shared->solver;
-    const int batch_size = shared->batch_size;
+    int batch_size = shared->batch_size;
+    const int num_threads = shared->num_threads;
     const int end_pixel = shared->end_pixel;
     int* buffer = shared->buffer;
     pthread_mutex_t* mutex = &shared->mutex;
@@ -369,6 +372,10 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
         int curr_start_pixel;
         int curr_end_pixel;
         pthread_mutex_lock(mutex);
+        if (batch_size > 8 && end_pixel - shared->shared_pixel <= 100 * num_threads * 1000) {
+            shared->batch_size = 8;
+            batch_size = shared->batch_size;
+        }
         curr_start_pixel = shared->shared_pixel;
         shared->shared_pixel += batch_size;
         pthread_mutex_unlock(mutex);
