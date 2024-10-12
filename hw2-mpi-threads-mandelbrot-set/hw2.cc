@@ -332,13 +332,17 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
 
         int repeats = 0;
         double x = 0;
+        double x_sq = 0;
         double y = 0;
+        double y_sq = 0;
         double length_squared = 0;
         while (repeats < iters && length_squared < 4) {
-            double temp = x * x - y * y + x0;
+            double temp = x_sq - y_sq + x0;
             y = 2 * x * y + y0;
+            y_sq = y * y;
             x = temp;
-            length_squared = x * x + y * y;
+            x_sq = x * x;
+            length_squared = x_sq + y_sq;
             ++repeats;
         }
         buffer[p] = repeats;
