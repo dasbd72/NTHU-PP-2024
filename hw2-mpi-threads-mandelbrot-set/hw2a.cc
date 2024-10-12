@@ -45,10 +45,10 @@ double get_timestamp() {
         std::cerr.flush();                                                       \
     }
 #define TIMING_INIT(arg) double __duration_##arg = 0;
-#define TIMING_ACCUM(arg)                                      \
-    {                                                          \
-        double __end_##arg = get_timestamp();                  \
-        double __duration_##arg = __end_##arg - __start_##arg; \
+#define TIMING_ACCUM(arg)                                \
+    {                                                    \
+        double __end_##arg = get_timestamp();            \
+        __duration_##arg += __end_##arg - __start_##arg; \
     }
 #define TIMING_FIN(arg)                                          \
     std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
@@ -302,12 +302,12 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         __m512d vec_x0 = _mm512_add_pd(_mm512_mul_pd(vec_i, vec_w_norm), vec_left);
 
         // Initialize variables
-        register __m256i vec_repeats = _mm256_set1_epi32(0);
-        register __m512d vec_x = _mm512_setzero_pd();
-        register __m512d vec_x_sq = _mm512_setzero_pd();
-        register __m512d vec_y = _mm512_setzero_pd();
-        register __m512d vec_y_sq = _mm512_setzero_pd();
-        register __m512d vec_length_squared = _mm512_setzero_pd();
+        __m256i vec_repeats = _mm256_set1_epi32(0);
+        __m512d vec_x = _mm512_setzero_pd();
+        __m512d vec_x_sq = _mm512_setzero_pd();
+        __m512d vec_y = _mm512_setzero_pd();
+        __m512d vec_y_sq = _mm512_setzero_pd();
+        __m512d vec_length_squared = _mm512_setzero_pd();
         int repeats = 0;
         __mmask8 mask = 0xFF;
         while (repeats < iters && mask) {
@@ -330,11 +330,11 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         double x0 = i * w_norm + left;
 
         int repeats = 0;
-        register double x = 0;
-        register double x_sq = 0;
-        register double y = 0;
-        register double y_sq = 0;
-        register double length_squared = 0;
+        double x = 0;
+        double x_sq = 0;
+        double y = 0;
+        double y_sq = 0;
+        double length_squared = 0;
         while (repeats < iters && length_squared < 4) {
             y = 2 * x * y + y0;
             x = x_sq - y_sq + x0;

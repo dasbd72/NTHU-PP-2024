@@ -45,10 +45,10 @@ double get_timestamp() {
         std::cerr.flush();                                                       \
     }
 #define TIMING_INIT(arg) double __duration_##arg = 0;
-#define TIMING_ACCUM(arg)                                      \
-    {                                                          \
-        double __end_##arg = get_timestamp();                  \
-        double __duration_##arg = __end_##arg - __start_##arg; \
+#define TIMING_ACCUM(arg)                                \
+    {                                                    \
+        double __end_##arg = get_timestamp();            \
+        __duration_##arg += __end_##arg - __start_##arg; \
     }
 #define TIMING_FIN(arg)                                          \
     std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
