@@ -225,8 +225,10 @@ void Solver::mandelbrot_mpi(int* buffer) {
 #endif
 
 void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer) {
+#if MULTITHREADED == 1 || MULTITHREADED == 2
     const int num_threads = num_cpus;
     const int batch_size = std::min(1000, (int)std::ceil((double)width * height / num_threads));
+#endif
 
 // mandelbrot set
 #if MULTITHREADED == 1
@@ -267,6 +269,8 @@ void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer) {
         }
         TIMING_END_1(thread, omp_get_thread_num());
     }
+#else
+    partial_mandelbrot_single_thread(start_pixel, end_pixel, buffer);
 #endif
 }
 
