@@ -304,11 +304,11 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         // Calculate pixel coordinates
         __m512d vec_p_offset = _mm512_add_pd(_mm512_set1_pd(p), vec_8_offset);
         __m512d vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_8_width));
-        __m512d vec_i = _mm512_floor_pd(_mm512_sub_pd(vec_p_offset, _mm512_mul_pd(vec_8_width, vec_j)));
+        __m512d vec_i = _mm512_floor_pd(_mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset));
 
         // Calculate initial values
-        __m512d vec_y0 = _mm512_add_pd(_mm512_mul_pd(vec_j, vec_8_h_norm), vec_8_lower);
-        __m512d vec_x0 = _mm512_add_pd(_mm512_mul_pd(vec_i, vec_8_w_norm), vec_8_left);
+        __m512d vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);
+        __m512d vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);
 
         // Initialize variables
         __m256i vec_repeats = _mm256_set1_epi32(0);
@@ -320,11 +320,11 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         int repeats = 0;
         __mmask8 mask = 0xFF;
         while (repeats < iters && mask) {
-            vec_y = _mm512_add_pd(_mm512_mul_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2), vec_y0);
+            vec_y = _mm512_fmadd_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2, vec_y0);
             vec_x = _mm512_add_pd(_mm512_sub_pd(vec_x_sq, vec_y_sq), vec_x0);
             vec_y_sq = _mm512_mul_pd(vec_y, vec_y);
             vec_x_sq = _mm512_mul_pd(vec_x, vec_x);
-            vec_length_squared = _mm512_add_pd(vec_x_sq, vec_y_sq);
+            vec_length_squared = _mm512_fmadd_pd(vec_x, vec_x, vec_y_sq);
             vec_repeats = _mm256_mask_add_epi32(vec_repeats, mask, vec_repeats, vec_8_1_epi32);
             ++repeats;
             mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
