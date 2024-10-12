@@ -44,6 +44,13 @@ double get_timestamp() {
         std::cerr << #arg << " " << i << " took " << __duration_##arg << "s.\n"; \
         std::cerr.flush();                                                       \
     }
+#define TIMING_END_2(arg, i, j)                                                              \
+    {                                                                                        \
+        double __end_##arg = get_timestamp();                                                \
+        double __duration_##arg = __end_##arg - __start_##arg;                               \
+        std::cerr << #arg << " " << i << " " << j << " took " << __duration_##arg << "s.\n"; \
+        std::cerr.flush();                                                                   \
+    }
 #define TIMING_INIT(arg) double __duration_##arg = 0;
 #define TIMING_ACCUM(arg)                                \
     {                                                    \
@@ -172,13 +179,13 @@ int Solver::solve(int argc, char** argv) {
 #else
     mandelbrot(buffer);
 #endif
-    TIMING_END(mandelbrot);
+    TIMING_END_1(mandelbrot, world_rank);
 
     // draw and cleanup
     if (world_rank == 0) {
         TIMING_START(write_png);
         write_png(buffer);
-        TIMING_END(write_png);
+        TIMING_END_1(write_png, world_rank);
     }
     free(buffer);
 
@@ -187,7 +194,7 @@ int Solver::solve(int argc, char** argv) {
     // MPI_Finalize();
     // TIMING_END_1(MPI_Finalize, world_rank);
 #endif
-    TIMING_END(all);
+    TIMING_END_1(all, world_rank);
     return 0;
 }
 
