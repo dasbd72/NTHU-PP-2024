@@ -388,7 +388,7 @@ void Solver::write_png(const int* buffer) const {
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
     png_write_info(png_ptr, info_ptr);
-    png_set_compression_level(png_ptr, 1);
+    png_set_compression_level(png_ptr, 0);
     size_t row_size = 3 * width * sizeof(png_byte);
     png_bytep row = (png_bytep)malloc(row_size);
     for (int y = 0; y < height; ++y) {
