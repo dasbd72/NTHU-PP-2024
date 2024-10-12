@@ -290,25 +290,25 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
     int p = start_pixel;
 #if defined(__AVX512F__) && defined(SIMD_ENABLED)
     // Constants
-    const int vec_size = 8;
-    const __m256i vec_1_epi32 = _mm256_set1_epi32(1);
-    const __m512d vec_2 = _mm512_set1_pd(2);
-    const __m512d vec_4 = _mm512_set1_pd(4);
-    const __m512d vec_offset = _mm512_set_pd(7, 6, 5, 4, 3, 2, 1, 0);
-    const __m512d vec_width = _mm512_set1_pd(width);
-    const __m512d vec_w_norm = _mm512_set1_pd(w_norm);
-    const __m512d vec_h_norm = _mm512_set1_pd(h_norm);
-    const __m512d vec_left = _mm512_set1_pd(left);
-    const __m512d vec_lower = _mm512_set1_pd(lower);
-    for (; p + vec_size - 1 < end_pixel; p += vec_size) {
+    const int vec_8_size = 8;
+    const __m256i vec_8_1_epi32 = _mm256_set1_epi32(1);
+    const __m512d vec_8_2 = _mm512_set1_pd(2);
+    const __m512d vec_8_4 = _mm512_set1_pd(4);
+    const __m512d vec_8_offset = _mm512_set_pd(7, 6, 5, 4, 3, 2, 1, 0);
+    const __m512d vec_8_width = _mm512_set1_pd(width);
+    const __m512d vec_8_w_norm = _mm512_set1_pd(w_norm);
+    const __m512d vec_8_h_norm = _mm512_set1_pd(h_norm);
+    const __m512d vec_8_left = _mm512_set1_pd(left);
+    const __m512d vec_8_lower = _mm512_set1_pd(lower);
+    for (; p + vec_8_size - 1 < end_pixel; p += vec_8_size) {
         // Calculate pixel coordinates
-        __m512d vec_p_offset = _mm512_add_pd(_mm512_set1_pd(p), vec_offset);
-        __m512d vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_width));
-        __m512d vec_i = _mm512_floor_pd(_mm512_sub_pd(vec_p_offset, _mm512_mul_pd(vec_width, vec_j)));
+        __m512d vec_p_offset = _mm512_add_pd(_mm512_set1_pd(p), vec_8_offset);
+        __m512d vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_8_width));
+        __m512d vec_i = _mm512_floor_pd(_mm512_sub_pd(vec_p_offset, _mm512_mul_pd(vec_8_width, vec_j)));
 
         // Calculate initial values
-        __m512d vec_y0 = _mm512_add_pd(_mm512_mul_pd(vec_j, vec_h_norm), vec_lower);
-        __m512d vec_x0 = _mm512_add_pd(_mm512_mul_pd(vec_i, vec_w_norm), vec_left);
+        __m512d vec_y0 = _mm512_add_pd(_mm512_mul_pd(vec_j, vec_8_h_norm), vec_8_lower);
+        __m512d vec_x0 = _mm512_add_pd(_mm512_mul_pd(vec_i, vec_8_w_norm), vec_8_left);
 
         // Initialize variables
         __m256i vec_repeats = _mm256_set1_epi32(0);
@@ -320,14 +320,14 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         int repeats = 0;
         __mmask8 mask = 0xFF;
         while (repeats < iters && mask) {
-            vec_y = _mm512_add_pd(_mm512_mul_pd(_mm512_mul_pd(vec_x, vec_y), vec_2), vec_y0);
+            vec_y = _mm512_add_pd(_mm512_mul_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2), vec_y0);
             vec_x = _mm512_add_pd(_mm512_sub_pd(vec_x_sq, vec_y_sq), vec_x0);
             vec_y_sq = _mm512_mul_pd(vec_y, vec_y);
             vec_x_sq = _mm512_mul_pd(vec_x, vec_x);
             vec_length_squared = _mm512_add_pd(vec_x_sq, vec_y_sq);
-            vec_repeats = _mm256_mask_add_epi32(vec_repeats, mask, vec_repeats, vec_1_epi32);
+            vec_repeats = _mm256_mask_add_epi32(vec_repeats, mask, vec_repeats, vec_8_1_epi32);
             ++repeats;
-            mask = _mm512_cmp_pd_mask(vec_length_squared, vec_4, _CMP_LT_OQ);
+            mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
         }
         _mm256_storeu_epi32(&buffer[p], vec_repeats);
     }
