@@ -274,6 +274,7 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
     // mandelbrot set
     const double h_norm = (upper - lower) / height;
     const double w_norm = (right - left) / width;
+    int p = start_pixel;
 #if defined(__AVX512F__) && defined(SIMD_ENABLED)
     // Constants
     const int vec_size = 8;
@@ -286,7 +287,6 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
     const __m512d vec_h_norm = _mm512_set1_pd(h_norm);
     const __m512d vec_left = _mm512_set1_pd(left);
     const __m512d vec_lower = _mm512_set1_pd(lower);
-    int p = start_pixel;
     for (; p + vec_size - 1 < end_pixel; p += vec_size) {
         // Calculate pixel coordinates
         __m512d vec_p_offset = _mm512_add_pd(_mm512_set1_pd(p), vec_offset);
@@ -319,6 +319,7 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         }
         _mm256_storeu_epi32(&buffer[p], vec_repeats);
     }
+#endif
     for (; p < end_pixel; ++p) {
         int j = p / width;
         int i = p % width;
@@ -338,27 +339,6 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         }
         buffer[p] = repeats;
     }
-#else
-    for (int p = start_pixel; p < end_pixel; ++p) {
-        int j = p / width;
-        int i = p % width;
-        double y0 = j * h_norm + lower;
-        double x0 = i * w_norm + left;
-
-        int repeats = 0;
-        double x = 0;
-        double y = 0;
-        double length_squared = 0;
-        while (repeats < iters && length_squared < 4) {
-            double temp = x * x - y * y + x0;
-            y = 2 * x * y + y0;
-            x = temp;
-            length_squared = x * x + y * y;
-            ++repeats;
-        }
-        buffer[p] = repeats;
-    }
-#endif
 }
 
 #if MULTITHREADED == 1
