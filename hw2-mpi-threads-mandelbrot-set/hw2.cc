@@ -67,6 +67,8 @@ double get_timestamp() {
     {}
 #define TIMING_END_1(arg, i) \
     {}
+#define TIMING_END_2(arg, i, j) \
+    {}
 #define TIMING_INIT(arg) \
     {}
 #define TIMING_ACCUM(arg) \
@@ -79,6 +81,7 @@ const int max_num_procs = 48;
 const int max_num_cpus = 12;
 const long long min_tasks_per_process = (long long)500 * 1920 * 1080;
 const int min_pixels_per_thread = 100;
+const int max_buffer_size = 12000 * 40;
 
 class Solver {
    public:
@@ -103,6 +106,26 @@ class Solver {
     struct ThreadData {
         SharedData* shared;
     };
+#ifdef MPI_ENABLED
+    struct Task {
+        int start_pixel;
+        int end_pixel;
+    };
+    struct PartialBuffer {
+        Task task;
+        int buffer[max_buffer_size];
+    };
+    struct MasterSharedData {
+        Solver* solver;
+        int* buffer;
+        Task task;
+        pthread_mutex_t mutex;
+    };
+    struct MasterThreadData {
+        MasterSharedData* shared;
+        int rank;
+    };
+#endif
 
     // Arguments
     char* filename;
@@ -120,6 +143,9 @@ class Solver {
 
     void mandelbrot();
 #ifdef MPI_ENABLED
+    static void* pthreads_master(void* arg);
+    static void* pthreads_worker_0(void* arg);
+    static void* pthreads_worker(void* arg);
     void mandelbrot_mpi();
 #endif
     void partial_mandelbrot(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
@@ -147,7 +173,12 @@ int Solver::solve(int argc, char** argv) {
     }
 
 #ifdef MPI_ENABLED
-    MPI_Init(&argc, &argv);
+    int provided;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    if (provided < MPI_THREAD_MULTIPLE) {
+        std::cerr << "MPI does not support MPI_THREAD_MULTIPLE, provided level: " << provided << "\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 #else
@@ -207,37 +238,124 @@ void Solver::mandelbrot() {
 }
 
 #ifdef MPI_ENABLED
-void Solver::mandelbrot_mpi() {
-    // arguments
-    const int pixels_per_process = std::max(min_pixels_per_thread, (int)std::ceil((double)width * height / world_size));
-    const int actual_world_size = std::ceil((double)width * height / pixels_per_process);
-    int pivots[max_num_procs] = {0};
-    for (int i = 1; i < actual_world_size; i++) {
-        pivots[i] = pivots[i - 1] + pixels_per_process;
-    }
-    pivots[actual_world_size] = width * height;
-    if (world_rank >= actual_world_size) {
-        return;
-    }
+void* Solver::pthreads_master(void* arg) {
+    MasterThreadData* mtd = (MasterThreadData*)arg;
+    MasterSharedData* msd = mtd->shared;
+    int rank = mtd->rank;
 
+    Solver* solver = msd->solver;
+    int* buffer = msd->buffer;
+    Task* task = &msd->task;
+    pthread_mutex_t* mutex = &msd->mutex;
+
+    PartialBuffer pb;
+    pb.task.start_pixel = max_buffer_size * (rank - 1);
+    pb.task.end_pixel = std::min(max_buffer_size * rank, solver->width * solver->height);
+
+    TIMING_START(master);
+    while (pb.task.start_pixel < pb.task.end_pixel) {
+        // receive results from worker
+        MPI_Recv(&pb, sizeof(PartialBuffer), MPI_BYTE, rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // send new task to worker
+        Task curr_task;
+        pthread_mutex_lock(mutex);
+        curr_task.start_pixel = task->start_pixel;
+        curr_task.end_pixel = task->end_pixel;
+        if (curr_task.start_pixel < curr_task.end_pixel) {
+            task->start_pixel = task->end_pixel;
+            task->end_pixel = std::min(task->end_pixel + max_buffer_size, solver->width * solver->height);
+        }
+        pthread_mutex_unlock(mutex);
+        MPI_Send(&curr_task, sizeof(curr_task), MPI_BYTE, rank, 0, MPI_COMM_WORLD);
+        // copy results to buffer
+        memcpy(buffer + pb.task.start_pixel, pb.buffer, (pb.task.end_pixel - pb.task.start_pixel) * sizeof(int));
+        // terminate if no more tasks
+        if (curr_task.start_pixel >= curr_task.end_pixel) {
+            break;
+        }
+    }
+    TIMING_END_2(master, solver->world_rank, rank);
+    return NULL;
+}
+
+void* Solver::pthreads_worker_0(void* arg) {
+    MasterSharedData* msd = (MasterSharedData*)arg;
+    Solver* solver = msd->solver;
+    int* buffer = msd->buffer;
+    Task* task = &msd->task;
+    pthread_mutex_t* mutex = &msd->mutex;
+
+    TIMING_START(worker);
+    while (true) {
+        Task curr_task;
+        pthread_mutex_lock(mutex);
+        curr_task.start_pixel = task->start_pixel;
+        curr_task.end_pixel = task->end_pixel;
+        if (curr_task.start_pixel < curr_task.end_pixel) {
+            task->start_pixel = task->end_pixel;
+            task->end_pixel = std::min(task->end_pixel + max_buffer_size, solver->width * solver->height);
+        }
+        pthread_mutex_unlock(mutex);
+        if (curr_task.start_pixel >= curr_task.end_pixel) {
+            break;
+        }
+        // compute partial mandelbrot set
+        solver->partial_mandelbrot(curr_task.start_pixel, curr_task.end_pixel, buffer, 0);
+    }
+    TIMING_END_1(worker, solver->world_rank);
+    return NULL;
+}
+
+void* Solver::pthreads_worker(void* arg) {
+    Solver* solver = (Solver*)arg;
+    PartialBuffer pb;
+    pb.task.start_pixel = max_buffer_size * (solver->world_rank - 1);
+    pb.task.end_pixel = std::min(max_buffer_size * solver->world_rank, solver->width * solver->height);
+
+    TIMING_START(worker);
+    while (pb.task.start_pixel < pb.task.end_pixel) {
+        // compute partial mandelbrot set
+        solver->partial_mandelbrot(pb.task.start_pixel, pb.task.end_pixel, pb.buffer, pb.task.start_pixel);
+        // send results to master
+        MPI_Send(&pb, sizeof(PartialBuffer), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+        // receive new task
+        MPI_Recv(&pb.task, sizeof(pb.task), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    TIMING_END_1(worker, solver->world_rank);
+    return NULL;
+}
+
+void Solver::mandelbrot_mpi() {
     // allocate memory for image
-    int* buffer;
+    int* buffer = NULL;
     if (world_rank == 0) {
         buffer = (int*)malloc(width * height * sizeof(int));
-    } else {
-        buffer = (int*)malloc((pivots[world_rank + 1] - pivots[world_rank]) * sizeof(int));
     }
 
-    // compute partial mandelbrot set
-    partial_mandelbrot(pivots[world_rank], pivots[world_rank + 1], buffer, pivots[world_rank]);
-
-    // aggregate results
+    // create threads
+    MasterSharedData msd;
+    msd.solver = this;
+    msd.buffer = buffer;
+    msd.task.start_pixel = max_buffer_size * (world_size - 1);
+    msd.task.end_pixel = std::min(max_buffer_size * world_size, width * height);
+    msd.mutex = PTHREAD_MUTEX_INITIALIZER;
+    MasterThreadData mtd_array[max_num_procs];
+    pthread_t master_threads[max_num_procs];
+    pthread_t worker_thread;
     if (world_rank == 0) {
-        for (int i = 1; i < actual_world_size; i++) {
-            MPI_Recv(buffer + pivots[i], pivots[i + 1] - pivots[i], MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        for (int i = 0; i < world_size - 1; i++) {
+            mtd_array[i].shared = &msd;
+            mtd_array[i].rank = i + 1;
+            pthread_create(&master_threads[i], NULL, pthreads_master, (void*)&mtd_array[i]);
         }
+        pthread_create(&worker_thread, NULL, pthreads_worker_0, (void*)&msd);
+        for (int i = 0; i < world_size - 1; i++) {
+            pthread_join(master_threads[i], NULL);
+        }
+        pthread_join(worker_thread, NULL);
     } else {
-        MPI_Send(buffer, pivots[world_rank + 1] - pivots[world_rank], MPI_INT, 0, 0, MPI_COMM_WORLD);
+        pthread_create(&worker_thread, NULL, pthreads_worker, (void*)this);
+        pthread_join(worker_thread, NULL);
     }
 
     // draw and cleanup
@@ -349,7 +467,9 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
 #if MULTITHREADED == 1
     TIMING_END_1(thread, pthread_self());
 #elif MULTITHREADED == 2
-    TIMING_END_1(thread, omp_get_thread_num());
+    if (solver->world_size == 0) {
+        TIMING_END_1(thread, omp_get_thread_num());
+    }
 #endif
 }
 
