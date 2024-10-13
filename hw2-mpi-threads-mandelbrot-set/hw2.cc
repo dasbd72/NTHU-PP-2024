@@ -87,7 +87,6 @@ class Solver {
     int solve(int argc, char** argv);
 
    private:
-#if MULTITHREADED == 1
     struct SharedData {
         Solver* solver;
         int num_threads;
@@ -97,12 +96,13 @@ class Solver {
         int shared_pixel;
         int* buffer;
         int buffer_offset;
+#if MULTITHREADED == 1
         pthread_mutex_t mutex;
+#endif
     };
     struct ThreadData {
         SharedData* shared;
     };
-#endif
 
     // Arguments
     char* filename;
@@ -123,10 +123,11 @@ class Solver {
     void mandelbrot_mpi();
 #endif
     void partial_mandelbrot(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
-    void partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
 #if MULTITHREADED == 1
-    static void* pthreads_partial_mandelbrot(void* arg);
+    static void* pthreads_partial_mandelbrot_thread(void* arg);
 #endif
+    void partial_mandelbrot_thread(ThreadData* thread_data);
+    void partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
     void write_png(const int* buffer) const;
 };
 
@@ -255,50 +256,100 @@ void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer, int
     const int batch_size = std::min(1000, (int)std::ceil((double)width * height / num_threads));
 #endif
 
-// mandelbrot set
+    // Set up shared data
+    if (num_threads > 1) {
+#if MULTITHREADED == 1 || MULTITHREADED == 2
 #if MULTITHREADED == 1
-    pthread_t threads[max_num_cpus];
-    SharedData shared_data;
-    shared_data.solver = this;
-    shared_data.num_threads = num_threads;
-    shared_data.batch_size = batch_size;
-    shared_data.start_pixel = start_pixel;
-    shared_data.end_pixel = end_pixel;
-    shared_data.shared_pixel = start_pixel;
-    shared_data.buffer = buffer;
-    shared_data.buffer_offset = buffer_offset;
-    shared_data.mutex = PTHREAD_MUTEX_INITIALIZER;
-    ThreadData thread_data_array[max_num_cpus];
-    for (int i = 0; i < num_threads; i++) {
-        thread_data_array[i].shared = &shared_data;
-        pthread_create(&threads[i], NULL, pthreads_partial_mandelbrot, (void*)&thread_data_array[i]);
-    }
-    for (int i = 0; i < num_threads; i++) {
-        pthread_join(threads[i], NULL);
-    }
-#elif MULTITHREADED == 2
-    int shared_pixel = start_pixel;
-#pragma omp parallel num_threads(num_threads) shared(shared_pixel, buffer)
-    {
-        TIMING_START(thread);
-        while (true) {
-            int curr_start_pixel;
-            int curr_end_pixel;
-#pragma omp critical
-            {
-                curr_start_pixel = shared_pixel;
-                shared_pixel += batch_size;
-            }
-            if (curr_start_pixel >= end_pixel) {
-                break;
-            }
-            curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
-            partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer, buffer_offset);
+        pthread_t threads[max_num_cpus];
+#endif
+        SharedData shared_data;
+        shared_data.solver = this;
+        shared_data.num_threads = num_threads;
+        shared_data.batch_size = batch_size;
+        shared_data.start_pixel = start_pixel;
+        shared_data.end_pixel = end_pixel;
+        shared_data.shared_pixel = start_pixel;
+        shared_data.buffer = buffer;
+        shared_data.buffer_offset = buffer_offset;
+#if MULTITHREADED == 1
+        shared_data.mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
+        ThreadData thread_data_array[max_num_cpus];
+        for (int i = 0; i < num_threads; i++) {
+            thread_data_array[i].shared = &shared_data;
         }
-        TIMING_END_1(thread, omp_get_thread_num());
-    }
+#endif
+#if MULTITHREADED == 1
+        for (int i = 0; i < num_threads; i++) {
+            pthread_create(&threads[i], NULL, pthreads_partial_mandelbrot_thread, (void*)&thread_data_array[i]);
+        }
+        for (int i = 0; i < num_threads; i++) {
+            pthread_join(threads[i], NULL);
+        }
+#elif MULTITHREADED == 2
+#pragma omp parallel num_threads(num_threads)
+        {
+            partial_mandelbrot_thread(&thread_data_array[omp_get_thread_num()]);
+        }
 #else
-    partial_mandelbrot_single_thread(start_pixel, end_pixel, buffer, buffer_offset);
+        partial_mandelbrot_single_thread(start_pixel, end_pixel, buffer, buffer_offset);
+#endif
+    } else {
+        partial_mandelbrot_single_thread(start_pixel, end_pixel, buffer, buffer_offset);
+    }
+}
+
+#if MULTITHREADED == 1
+void* Solver::pthreads_partial_mandelbrot_thread(void* arg) {
+    ThreadData* thread_data = (ThreadData*)arg;
+    thread_data->shared->solver->partial_mandelbrot_thread(thread_data);
+    return NULL;
+}
+#endif
+
+void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
+    SharedData* shared = thread_data->shared;
+    Solver* solver = shared->solver;
+    int batch_size = shared->batch_size;
+    const int num_threads = shared->num_threads;
+    const int end_pixel = shared->end_pixel;
+    int* buffer = shared->buffer;
+    int buffer_offset = shared->buffer_offset;
+#if MULTITHREADED == 1
+    pthread_mutex_t* mutex = &shared->mutex;
+#endif
+
+    TIMING_START(thread);
+    while (true) {
+        int curr_start_pixel;
+        int curr_end_pixel;
+#if MULTITHREADED == 2
+#pragma omp critical
+#endif
+        {
+#if MULTITHREADED == 1
+            pthread_mutex_lock(mutex);
+#endif
+            curr_start_pixel = shared->shared_pixel;
+            if (batch_size > 8 && end_pixel - curr_start_pixel <= 100 * num_threads * 1000) {
+                shared->batch_size = 8;
+                batch_size = shared->batch_size;
+            }
+            shared->shared_pixel += batch_size;
+#if MULTITHREADED == 1
+            pthread_mutex_unlock(mutex);
+#endif
+        }
+        if (curr_start_pixel >= end_pixel) {
+            break;
+        }
+        curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
+        solver->partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer, buffer_offset);
+    }
+#if MULTITHREADED == 1
+    TIMING_END_1(thread, pthread_self());
+#elif MULTITHREADED == 2
+    TIMING_END_1(thread, omp_get_thread_num());
 #endif
 }
 
@@ -374,41 +425,6 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
         buffer[p - buffer_offset] = repeats;
     }
 }
-
-#if MULTITHREADED == 1
-void* Solver::pthreads_partial_mandelbrot(void* arg) {
-    ThreadData* thread_data = (ThreadData*)arg;
-    SharedData* shared = thread_data->shared;
-    Solver* solver = shared->solver;
-    int batch_size = shared->batch_size;
-    const int num_threads = shared->num_threads;
-    const int end_pixel = shared->end_pixel;
-    int* buffer = shared->buffer;
-    int buffer_offset = shared->buffer_offset;
-    pthread_mutex_t* mutex = &shared->mutex;
-
-    TIMING_START(thread);
-    while (true) {
-        int curr_start_pixel;
-        int curr_end_pixel;
-        pthread_mutex_lock(mutex);
-        if (batch_size > 8 && end_pixel - shared->shared_pixel <= 100 * num_threads * 1000) {
-            shared->batch_size = 8;
-            batch_size = shared->batch_size;
-        }
-        curr_start_pixel = shared->shared_pixel;
-        shared->shared_pixel += batch_size;
-        pthread_mutex_unlock(mutex);
-        if (curr_start_pixel >= end_pixel) {
-            break;
-        }
-        curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
-        solver->partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer, buffer_offset);
-    }
-    TIMING_END_1(thread, pthread_self());
-    return NULL;
-}
-#endif
 
 void Solver::write_png(const int* buffer) const {
     TIMING_START(write_png_setup);
