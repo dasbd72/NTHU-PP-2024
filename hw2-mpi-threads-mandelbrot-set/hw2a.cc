@@ -394,8 +394,8 @@ void Solver::mandelbrot_mpi() {
         TIMING_START(write_png);
         write_png(buffer);
         TIMING_END_1(write_png, world_rank);
+        free(buffer);
     }
-    free(buffer);
 }
 #endif
 
