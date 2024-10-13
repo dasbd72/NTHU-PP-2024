@@ -92,9 +92,11 @@ class Solver {
         Solver* solver;
         int num_threads;
         int batch_size;
+        int start_pixel;
         int end_pixel;
         int shared_pixel;
         int* buffer;
+        int buffer_offset;
         pthread_mutex_t mutex;
     };
     struct ThreadData {
@@ -116,12 +118,12 @@ class Solver {
     int world_rank;
     int world_size;
 
-    void mandelbrot(int* buffer);
+    void mandelbrot();
 #ifdef MPI_ENABLED
-    void mandelbrot_mpi(int* buffer);
+    void mandelbrot_mpi();
 #endif
-    void partial_mandelbrot(int start_pixel, int end_pixel, int* buffer);
-    void partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer);
+    void partial_mandelbrot(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
+    void partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
 #if MULTITHREADED == 1
     static void* pthreads_partial_mandelbrot(void* arg);
 #endif
@@ -166,28 +168,17 @@ int Solver::solve(int argc, char** argv) {
     width = strtol(argv[7], 0, 10);
     height = strtol(argv[8], 0, 10);
 
-    // allocate memory for image
-    int* buffer = (int*)malloc(width * height * sizeof(int));
-
     TIMING_START(mandelbrot);
 #ifdef MPI_ENABLED
     if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
-        mandelbrot(buffer);
+        mandelbrot();
     } else {
-        mandelbrot_mpi(buffer);
+        mandelbrot_mpi();
     }
 #else
-    mandelbrot(buffer);
+    mandelbrot();
 #endif
     TIMING_END_1(mandelbrot, world_rank);
-
-    // draw and cleanup
-    if (world_rank == 0) {
-        TIMING_START(write_png);
-        write_png(buffer);
-        TIMING_END_1(write_png, world_rank);
-    }
-    free(buffer);
 
 #ifdef MPI_ENABLED
     // TIMING_START(MPI_Finalize);
@@ -198,13 +189,24 @@ int Solver::solve(int argc, char** argv) {
     return 0;
 }
 
-void Solver::mandelbrot(int* buffer) {
+void Solver::mandelbrot() {
+    // allocate memory for image
+    int* buffer = (int*)malloc(width * height * sizeof(int));
+
     // compute partial mandelbrot set
-    partial_mandelbrot(0, width * height, buffer);
+    partial_mandelbrot(0, width * height, buffer, 0);
+
+    // draw and cleanup
+    if (world_rank == 0) {
+        TIMING_START(write_png);
+        write_png(buffer);
+        TIMING_END_1(write_png, world_rank);
+    }
+    free(buffer);
 }
 
 #ifdef MPI_ENABLED
-void Solver::mandelbrot_mpi(int* buffer) {
+void Solver::mandelbrot_mpi() {
     // arguments
     const int pixels_per_process = std::max(min_pixels_per_thread, (int)std::ceil((double)width * height / world_size));
     const int actual_world_size = std::ceil((double)width * height / pixels_per_process);
@@ -217,8 +219,16 @@ void Solver::mandelbrot_mpi(int* buffer) {
         return;
     }
 
+    // allocate memory for image
+    int* buffer;
+    if (world_rank == 0) {
+        buffer = (int*)malloc(width * height * sizeof(int));
+    } else {
+        buffer = (int*)malloc((pivots[world_rank + 1] - pivots[world_rank]) * sizeof(int));
+    }
+
     // compute partial mandelbrot set
-    partial_mandelbrot(pivots[world_rank], pivots[world_rank + 1], buffer);
+    partial_mandelbrot(pivots[world_rank], pivots[world_rank + 1], buffer, pivots[world_rank]);
 
     // aggregate results
     if (world_rank == 0) {
@@ -226,12 +236,20 @@ void Solver::mandelbrot_mpi(int* buffer) {
             MPI_Recv(buffer + pivots[i], pivots[i + 1] - pivots[i], MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
     } else {
-        MPI_Send(buffer + pivots[world_rank], pivots[world_rank + 1] - pivots[world_rank], MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(buffer, pivots[world_rank + 1] - pivots[world_rank], MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
+
+    // draw and cleanup
+    if (world_rank == 0) {
+        TIMING_START(write_png);
+        write_png(buffer);
+        TIMING_END_1(write_png, world_rank);
+    }
+    free(buffer);
 }
 #endif
 
-void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer) {
+void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer, int buffer_offset) {
 #if MULTITHREADED == 1 || MULTITHREADED == 2
     const int num_threads = num_cpus;
     const int batch_size = std::min(1000, (int)std::ceil((double)width * height / num_threads));
@@ -244,9 +262,11 @@ void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer) {
     shared_data.solver = this;
     shared_data.num_threads = num_threads;
     shared_data.batch_size = batch_size;
+    shared_data.start_pixel = start_pixel;
     shared_data.end_pixel = end_pixel;
     shared_data.shared_pixel = start_pixel;
     shared_data.buffer = buffer;
+    shared_data.buffer_offset = buffer_offset;
     shared_data.mutex = PTHREAD_MUTEX_INITIALIZER;
     ThreadData thread_data_array[max_num_cpus];
     for (int i = 0; i < num_threads; i++) {
@@ -273,16 +293,16 @@ void Solver::partial_mandelbrot(int start_pixel, int end_pixel, int* buffer) {
                 break;
             }
             curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
-            partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer);
+            partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer, buffer_offset);
         }
         TIMING_END_1(thread, omp_get_thread_num());
     }
 #else
-    partial_mandelbrot_single_thread(start_pixel, end_pixel, buffer);
+    partial_mandelbrot_single_thread(start_pixel, end_pixel, buffer, buffer_offset);
 #endif
 }
 
-void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer) {
+void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer, int buffer_offset) {
     // mandelbrot set
     const double h_norm = (upper - lower) / height;
     const double w_norm = (right - left) / width;
@@ -328,7 +348,7 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
             ++repeats;
             mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
         }
-        _mm256_storeu_epi32(&buffer[p], vec_repeats);
+        _mm256_storeu_epi32(&buffer[p - buffer_offset], vec_repeats);
     }
 #endif
     for (; p < end_pixel; ++p) {
@@ -351,7 +371,7 @@ void Solver::partial_mandelbrot_single_thread(int start_pixel, int end_pixel, in
             length_squared = x_sq + y_sq;
             ++repeats;
         }
-        buffer[p] = repeats;
+        buffer[p - buffer_offset] = repeats;
     }
 }
 
@@ -364,6 +384,7 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
     const int num_threads = shared->num_threads;
     const int end_pixel = shared->end_pixel;
     int* buffer = shared->buffer;
+    int buffer_offset = shared->buffer_offset;
     pthread_mutex_t* mutex = &shared->mutex;
 
     TIMING_START(thread);
@@ -382,7 +403,7 @@ void* Solver::pthreads_partial_mandelbrot(void* arg) {
             break;
         }
         curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
-        solver->partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer);
+        solver->partial_mandelbrot_single_thread(curr_start_pixel, curr_end_pixel, buffer, buffer_offset);
     }
     TIMING_END_1(thread, pthread_self());
     return NULL;
