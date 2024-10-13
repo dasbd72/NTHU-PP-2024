@@ -596,7 +596,6 @@ void Solver::write_png(const int* buffer) const {
     size_t row_size = 3 * width * sizeof(png_byte);
     png_bytep row = (png_bytep)malloc(row_size);
     for (int y = 0; y < height; ++y) {
-        memset(row, 0, row_size);
         for (int x = 0; x < width; ++x) {
             int p = buffer[(height - 1 - y) * width + x];
             png_bytep color = row + x * 3;
@@ -606,7 +605,10 @@ void Solver::write_png(const int* buffer) const {
                     color[1] = color[2] = p % 16 * 16;
                 } else {
                     color[0] = p % 16 * 16;
+                    color[1] = color[2] = 0;
                 }
+            } else {
+                color[0] = color[1] = color[2] = 0;
             }
         }
         png_write_row(png_ptr, row);
