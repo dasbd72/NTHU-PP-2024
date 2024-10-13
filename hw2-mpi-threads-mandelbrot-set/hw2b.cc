@@ -80,8 +80,8 @@ double get_timestamp() {
 const int max_num_procs = 48;
 const int max_num_cpus = 12;
 const long long min_tasks_per_process = (long long)500 * 1920 * 1080;
-const int min_pixels_per_thread = 100;
-const int max_buffer_size = 12000 * 40;
+const int min_batch_size_per_thread = 1000;
+const int max_buffer_size = max_num_cpus * min_batch_size_per_thread * 100;
 
 class Solver {
    public:
@@ -107,23 +107,33 @@ class Solver {
         SharedData* shared;
     };
 #ifdef MPI_ENABLED
-    struct Task {
+    struct MPITask {
         int start_pixel;
         int end_pixel;
     };
     struct PartialBuffer {
-        Task task;
+        MPITask task;
         int buffer[max_buffer_size];
     };
     struct MasterSharedData {
         Solver* solver;
+        int num_procs;
+        int batch_size;
         int* buffer;
-        Task task;
+        MPITask shared_task;
         pthread_mutex_t mutex;
     };
     struct MasterThreadData {
         MasterSharedData* shared;
         int rank;
+        MPITask init_task;
+    };
+    struct WorkerSharedData {
+        Solver* solver;
+    };
+    struct WorkerThreadData {
+        WorkerSharedData* shared;
+        MPITask init_task;
     };
 #endif
 
@@ -143,6 +153,7 @@ class Solver {
 
     void mandelbrot();
 #ifdef MPI_ENABLED
+    void atomic_next_task(MasterSharedData* msd, MPITask& task);
     static void* pthreads_master(void* arg);
     static void* pthreads_worker_0(void* arg);
     static void* pthreads_worker(void* arg);
@@ -238,6 +249,24 @@ void Solver::mandelbrot() {
 }
 
 #ifdef MPI_ENABLED
+inline void Solver::atomic_next_task(MasterSharedData* msd, MPITask& task) {
+    Solver* solver = msd->solver;
+    MPITask* shared_task = &msd->shared_task;
+    pthread_mutex_t* mutex = &msd->mutex;
+
+    pthread_mutex_lock(mutex);
+    task.start_pixel = shared_task->start_pixel;
+    task.end_pixel = shared_task->end_pixel;
+    if (task.start_pixel < task.end_pixel) {
+        shared_task->start_pixel = shared_task->end_pixel;
+        if (msd->batch_size > solver->num_cpus * min_batch_size_per_thread && shared_task->end_pixel - shared_task->start_pixel >= 24 * solver->num_cpus * min_batch_size_per_thread) {
+            msd->batch_size = solver->num_cpus * min_batch_size_per_thread;
+        }
+        shared_task->end_pixel = std::min(shared_task->end_pixel + msd->batch_size, solver->width * solver->height);
+    }
+    pthread_mutex_unlock(mutex);
+}
+
 void* Solver::pthreads_master(void* arg) {
     MasterThreadData* mtd = (MasterThreadData*)arg;
     MasterSharedData* msd = mtd->shared;
@@ -245,36 +274,26 @@ void* Solver::pthreads_master(void* arg) {
 
     Solver* solver = msd->solver;
     int* buffer = msd->buffer;
-    Task* task = &msd->task;
-    pthread_mutex_t* mutex = &msd->mutex;
 
-    PartialBuffer pb;
-    pb.task.start_pixel = max_buffer_size * (rank - 1);
-    pb.task.end_pixel = std::min(max_buffer_size * rank, solver->width * solver->height);
+    PartialBuffer* pb = (PartialBuffer*)malloc(sizeof(PartialBuffer));
+    MPITask prev_task;
+    prev_task.start_pixel = mtd->init_task.start_pixel;
+    prev_task.end_pixel = mtd->init_task.end_pixel;
 
     TIMING_START(master);
-    while (pb.task.start_pixel < pb.task.end_pixel) {
+    while (prev_task.start_pixel < prev_task.end_pixel) {
         // receive results from worker
-        MPI_Recv(&pb, sizeof(PartialBuffer), MPI_BYTE, rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(pb, sizeof(MPITask) + (prev_task.end_pixel - prev_task.start_pixel) * sizeof(int), MPI_BYTE, rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         // send new task to worker
-        Task curr_task;
-        pthread_mutex_lock(mutex);
-        curr_task.start_pixel = task->start_pixel;
-        curr_task.end_pixel = task->end_pixel;
-        if (curr_task.start_pixel < curr_task.end_pixel) {
-            task->start_pixel = task->end_pixel;
-            task->end_pixel = std::min(task->end_pixel + max_buffer_size, solver->width * solver->height);
-        }
-        pthread_mutex_unlock(mutex);
+        MPITask curr_task;
+        solver->atomic_next_task(msd, curr_task);
         MPI_Send(&curr_task, sizeof(curr_task), MPI_BYTE, rank, 0, MPI_COMM_WORLD);
         // copy results to buffer
-        memcpy(buffer + pb.task.start_pixel, pb.buffer, (pb.task.end_pixel - pb.task.start_pixel) * sizeof(int));
-        // terminate if no more tasks
-        if (curr_task.start_pixel >= curr_task.end_pixel) {
-            break;
-        }
+        memcpy(buffer + pb->task.start_pixel, pb->buffer, (pb->task.end_pixel - pb->task.start_pixel) * sizeof(int));
+        prev_task = curr_task;
     }
     TIMING_END_2(master, solver->world_rank, rank);
+    free(pb);
     return NULL;
 }
 
@@ -282,20 +301,11 @@ void* Solver::pthreads_worker_0(void* arg) {
     MasterSharedData* msd = (MasterSharedData*)arg;
     Solver* solver = msd->solver;
     int* buffer = msd->buffer;
-    Task* task = &msd->task;
-    pthread_mutex_t* mutex = &msd->mutex;
 
     TIMING_START(worker);
     while (true) {
-        Task curr_task;
-        pthread_mutex_lock(mutex);
-        curr_task.start_pixel = task->start_pixel;
-        curr_task.end_pixel = task->end_pixel;
-        if (curr_task.start_pixel < curr_task.end_pixel) {
-            task->start_pixel = task->end_pixel;
-            task->end_pixel = std::min(task->end_pixel + max_buffer_size, solver->width * solver->height);
-        }
-        pthread_mutex_unlock(mutex);
+        MPITask curr_task;
+        solver->atomic_next_task(msd, curr_task);
         if (curr_task.start_pixel >= curr_task.end_pixel) {
             break;
         }
@@ -307,25 +317,37 @@ void* Solver::pthreads_worker_0(void* arg) {
 }
 
 void* Solver::pthreads_worker(void* arg) {
-    Solver* solver = (Solver*)arg;
-    PartialBuffer pb;
-    pb.task.start_pixel = max_buffer_size * (solver->world_rank - 1);
-    pb.task.end_pixel = std::min(max_buffer_size * solver->world_rank, solver->width * solver->height);
+    WorkerThreadData* wtd = (WorkerThreadData*)arg;
+    WorkerSharedData* wsd = wtd->shared;
+    Solver* solver = wsd->solver;
+    PartialBuffer* pb = (PartialBuffer*)malloc(sizeof(PartialBuffer));
+    pb->task.start_pixel = wtd->init_task.start_pixel;
+    pb->task.end_pixel = wtd->init_task.end_pixel;
 
     TIMING_START(worker);
-    while (pb.task.start_pixel < pb.task.end_pixel) {
+    while (pb->task.start_pixel < pb->task.end_pixel) {
         // compute partial mandelbrot set
-        solver->partial_mandelbrot(pb.task.start_pixel, pb.task.end_pixel, pb.buffer, pb.task.start_pixel);
+        solver->partial_mandelbrot(pb->task.start_pixel, pb->task.end_pixel, pb->buffer, pb->task.start_pixel);
         // send results to master
-        MPI_Send(&pb, sizeof(PartialBuffer), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(pb, sizeof(MPITask) + (pb->task.end_pixel - pb->task.start_pixel) * sizeof(int), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
         // receive new task
-        MPI_Recv(&pb.task, sizeof(pb.task), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&pb->task, sizeof(pb->task), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
     TIMING_END_1(worker, solver->world_rank);
+    free(pb);
     return NULL;
 }
 
 void Solver::mandelbrot_mpi() {
+    const int batch_size = std::max(std::min(max_buffer_size, (int)std::ceil((double)width * height / world_size)), 32 * num_cpus * min_batch_size_per_thread);
+    const int num_procs = std::min(world_size, (int)std::ceil((double)width * height / batch_size));
+
+    MPITask init_tasks[max_num_procs];
+    for (int i = 0; i < num_procs - 1; i++) {
+        init_tasks[i].start_pixel = batch_size * i;
+        init_tasks[i].end_pixel = std::min(batch_size * (i + 1), width * height);
+    }
+
     // allocate memory for image
     int* buffer = NULL;
     if (world_rank == 0) {
@@ -333,28 +355,37 @@ void Solver::mandelbrot_mpi() {
     }
 
     // create threads
-    MasterSharedData msd;
-    msd.solver = this;
-    msd.buffer = buffer;
-    msd.task.start_pixel = max_buffer_size * (world_size - 1);
-    msd.task.end_pixel = std::min(max_buffer_size * world_size, width * height);
-    msd.mutex = PTHREAD_MUTEX_INITIALIZER;
-    MasterThreadData mtd_array[max_num_procs];
-    pthread_t master_threads[max_num_procs];
-    pthread_t worker_thread;
     if (world_rank == 0) {
-        for (int i = 0; i < world_size - 1; i++) {
+        MasterSharedData msd;
+        msd.solver = this;
+        msd.num_procs = num_procs;
+        msd.batch_size = batch_size;
+        msd.buffer = buffer;
+        msd.shared_task.start_pixel = batch_size * (num_procs - 1);
+        msd.shared_task.end_pixel = std::min(batch_size * num_procs, width * height);
+        msd.mutex = PTHREAD_MUTEX_INITIALIZER;
+        MasterThreadData mtd_array[max_num_procs];
+        pthread_t master_threads[max_num_procs];
+        pthread_t worker_thread;
+        for (int i = 0; i < num_procs - 1; i++) {
             mtd_array[i].shared = &msd;
             mtd_array[i].rank = i + 1;
+            mtd_array[i].init_task = init_tasks[i];
             pthread_create(&master_threads[i], NULL, pthreads_master, (void*)&mtd_array[i]);
         }
         pthread_create(&worker_thread, NULL, pthreads_worker_0, (void*)&msd);
-        for (int i = 0; i < world_size - 1; i++) {
+        for (int i = 0; i < num_procs - 1; i++) {
             pthread_join(master_threads[i], NULL);
         }
         pthread_join(worker_thread, NULL);
-    } else {
-        pthread_create(&worker_thread, NULL, pthreads_worker, (void*)this);
+    } else if (world_rank < num_procs) {
+        WorkerSharedData wsd;
+        wsd.solver = this;
+        WorkerThreadData wtd;
+        pthread_t worker_thread;
+        wtd.shared = &wsd;
+        wtd.init_task = init_tasks[world_rank - 1];
+        pthread_create(&worker_thread, NULL, pthreads_worker, (void*)&wtd);
         pthread_join(worker_thread, NULL);
     }
 
