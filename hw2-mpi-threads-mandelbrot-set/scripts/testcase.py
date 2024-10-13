@@ -9,6 +9,7 @@ class Args:
     verify = False
     local_dir = False
     testcase_dir = "testcases"
+    nodes = 1
     procs = 1
     cpus = 1
     profile = "nsys"
@@ -21,6 +22,7 @@ args = argparse.ArgumentParser()
 args.add_argument("--verify", action="store_true")
 args.add_argument("--local-dir", action="store_true")
 args.add_argument("--testcase-dir", type=str, default="testcases")
+args.add_argument("--nodes", "-N", type=int, default=1)
 args.add_argument("--procs", "-n", type=int, default=1)
 args.add_argument("--cpus", "-c", type=int, default=1)
 args.add_argument(
@@ -70,22 +72,26 @@ if __name__ == "__main__":
     if os.path.exists(outputs_png):
         os.remove(outputs_png)
     # Run the program
+    cmd_srun = f"srun -N {args.nodes} -n {args.procs} -c {args.cpus}"
+    cmd_prog = f"./{args.program} {outputs_png} {tc}"
     if args.profile == "nsys":
         if args.program == "hw2a":
             outputs_report = f"nsys-reports/hw2a/{testcase}"
             os.makedirs("nsys-reports/hw2a", exist_ok=True)
-            cmd = f"srun -n {args.procs} -c {args.cpus} nsys profile -t openmp,nvtx,ucx,osrt --stats=true -f true -o {outputs_report} ./{args.program} {outputs_png} {tc}"
+            cmd = f"{cmd_srun} nsys profile -t openmp,nvtx,ucx,osrt --stats=true -f true -o {outputs_report} {cmd_prog}"
         elif args.program == "hw2b":
             outputs_report = f"nsys-reports/hw2b/{testcase}"
             os.makedirs("nsys-reports/hw2b", exist_ok=True)
-            cmd = f"srun -n {args.procs} -c {args.cpus} ./scripts/wrapper.sh {outputs_report} ./{args.program} {outputs_png} {tc}"
+            cmd = (
+                f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
+            )
     elif args.profile == "vtune":
         if args.program == "hw2a":
             outputs_report = f"vtune-reports/hw2a/{testcase}"
             os.makedirs("vtune-reports/hw2a", exist_ok=True)
-            cmd = f"srun -n {args.procs} -c {args.cpus} vtune -collect hotspots -r {outputs_report} -- ./{args.program} {outputs_png} {tc}"
+            cmd = f"{cmd_srun} vtune -collect hotspots -r {outputs_report} -- {cmd_prog}"
     else:
-        cmd = f"srun -n {args.procs} -c {args.cpus} ./{args.program} {outputs_png} {tc}"
+        cmd = f"{cmd_srun} {cmd_prog}"
     print(cmd)
     print("========== Program Output ==========")
     code = os.system(cmd)
