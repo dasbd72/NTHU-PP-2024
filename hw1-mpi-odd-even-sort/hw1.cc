@@ -174,29 +174,28 @@ void Solver::odd_even_sort_seq() {
 
 void Solver::odd_even_sort_mpi() {
     MPI_File input_file, output_file;
-    int local_size, local_start, local_end;
-    int actual_local_size, actual_world_size;
+    int max_local_size, local_start, local_end, local_size, actual_world_size;
     // Optimization: Use one contiguous buffer
     // Optimization: Use pointers to represent each part of the buffer to enable swapping without copying
     float *buffer, *local_data, *neighbor_data, *merge_buffer;
     int left_rank, right_rank;
 
-    local_size = std::min(array_size, std::max((int)ceil((double)array_size / world_size), MIN_SIZE_PER_PROC));
-    local_start = std::min(array_size, world_rank * local_size);
-    local_end = std::min(array_size, local_start + local_size);
-    actual_local_size = local_end - local_start;
-    actual_world_size = std::min(world_size, (int)ceil((double)array_size / local_size));
+    max_local_size = std::min(array_size, std::max((int)ceil((double)array_size / world_size), MIN_SIZE_PER_PROC));
+    local_start = std::min(array_size, world_rank * max_local_size);
+    local_end = std::min(array_size, local_start + max_local_size);
+    local_size = local_end - local_start;
+    actual_world_size = std::min(world_size, (int)ceil((double)array_size / max_local_size));
 
-    buffer = new float[local_size * 3];
+    buffer = new float[max_local_size * 3];
     local_data = buffer;
-    neighbor_data = buffer + local_size;
-    merge_buffer = buffer + local_size * 2;
+    neighbor_data = buffer + max_local_size;
+    merge_buffer = buffer + max_local_size * 2;
     if (world_rank == 0) {
         DEBUG_MSG("array_size: " << array_size);
-        DEBUG_MSG("local_size: " << local_size);
+        DEBUG_MSG("max_local_size: " << max_local_size);
         DEBUG_MSG("local_start: " << local_start);
         DEBUG_MSG("local_end: " << local_end);
-        DEBUG_MSG("actual_local_size: " << actual_local_size);
+        DEBUG_MSG("local_size: " << local_size);
         DEBUG_MSG("actual_world_size: " << actual_world_size);
     }
 
@@ -206,10 +205,10 @@ void Solver::odd_even_sort_mpi() {
     TIMING_START(mpi_read);
     MPI_File_open(MPI_COMM_SELF, input_filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &input_file);
     if (world_rank < actual_world_size) {
-        MPI_File_read_at(input_file, sizeof(float) * local_start, local_data, actual_local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
+        MPI_File_read_at(input_file, sizeof(float) * local_start, local_data, local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
     }
     MPI_File_close(&input_file);
-    for (int i = actual_local_size; i < local_size; i++) {
+    for (int i = local_size; i < max_local_size; i++) {
         local_data[i] = std::numeric_limits<float>::max();
     }
     TIMING_END(mpi_read, world_rank);
@@ -252,25 +251,25 @@ void Solver::odd_even_sort_mpi() {
             // Pre-check if the two ranks are well-sorted
             TIMING_LOG_MULTI_COMM_START("mpi_exchange_1", world_rank, p, world_rank, left_rank);
             TIMING_START(mpi_exchange_1);
-            MPI_Sendrecv(local_data, 1, MPI_FLOAT, left_rank, 0, neighbor_data + local_size - 1, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Sendrecv(local_data, 1, MPI_FLOAT, left_rank, 0, neighbor_data + max_local_size - 1, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             TIMING_ACCUM(mpi_exchange_1);
             TIMING_LOG_MULTI_COMM_END("mpi_exchange_1", world_rank, p, world_rank, left_rank);
-            if (*(neighbor_data + local_size - 1) <= *local_data) {
+            if (*(neighbor_data + max_local_size - 1) <= *local_data) {
                 // Skip since sorted
                 continue;
             }
             // Exchange data
-            if (local_size > 1) {
+            if (max_local_size > 1) {
                 TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, left_rank);
                 TIMING_START(mpi_exchange_2);
-                MPI_Sendrecv(local_data + 1, local_size - 1, MPI_FLOAT, left_rank, 0, neighbor_data, local_size - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Sendrecv(local_data + 1, max_local_size - 1, MPI_FLOAT, left_rank, 0, neighbor_data, max_local_size - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 TIMING_ACCUM(mpi_exchange_2);
                 TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, left_rank);
             }
             // Merge
             TIMING_LOG_MULTI_COMM_START("local_merge", world_rank, p, world_rank, left_rank);
             TIMING_START(local_merge);
-            merge_right(local_size, neighbor_data, local_data, merge_buffer);
+            merge_right(max_local_size, neighbor_data, local_data, merge_buffer);
             TIMING_ACCUM(local_merge);
             TIMING_LOG_MULTI_COMM_END("local_merge", world_rank, p, world_rank, left_rank);
         } else {
@@ -280,25 +279,25 @@ void Solver::odd_even_sort_mpi() {
             // Pre-check if the two ranks are well-sorted
             TIMING_LOG_MULTI_COMM_START("mpi_exchange_1", world_rank, p, world_rank, right_rank);
             TIMING_START(mpi_exchange_1);
-            MPI_Sendrecv(local_data + local_size - 1, 1, MPI_FLOAT, right_rank, 0, neighbor_data, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Sendrecv(local_data + max_local_size - 1, 1, MPI_FLOAT, right_rank, 0, neighbor_data, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             TIMING_ACCUM(mpi_exchange_1);
             TIMING_LOG_MULTI_COMM_END("mpi_exchange_1", world_rank, p, world_rank, right_rank);
-            if (*(local_data + local_size - 1) <= *neighbor_data) {
+            if (*(local_data + max_local_size - 1) <= *neighbor_data) {
                 // Skip since sorted
                 continue;
             }
             // Exchange data
-            if (local_size > 1) {
+            if (max_local_size > 1) {
                 TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, right_rank);
                 TIMING_START(mpi_exchange_2);
-                MPI_Sendrecv(local_data, local_size - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, local_size - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Sendrecv(local_data, max_local_size - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, max_local_size - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 TIMING_ACCUM(mpi_exchange_2);
                 TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, right_rank);
             }
             // Merge
             TIMING_LOG_MULTI_COMM_START("local_merge", world_rank, p, world_rank, right_rank);
             TIMING_START(local_merge);
-            merge_left(local_size, local_data, neighbor_data, merge_buffer);
+            merge_left(max_local_size, local_data, neighbor_data, merge_buffer);
             TIMING_ACCUM(local_merge);
             TIMING_LOG_MULTI_COMM_END("local_merge", world_rank, p, world_rank, right_rank);
         }
@@ -312,7 +311,7 @@ void Solver::odd_even_sort_mpi() {
     TIMING_START(mpi_write);
     MPI_File_open(MPI_COMM_SELF, output_filename, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &output_file);
     if (world_rank < actual_world_size) {
-        MPI_File_write_at(output_file, sizeof(float) * local_start, local_data, actual_local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
+        MPI_File_write_at(output_file, sizeof(float) * local_start, local_data, local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
     }
     MPI_File_close(&output_file);
     TIMING_END(mpi_write, world_rank);
