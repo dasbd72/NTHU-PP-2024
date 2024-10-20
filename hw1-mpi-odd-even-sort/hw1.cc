@@ -199,6 +199,16 @@ void Solver::odd_even_sort_mpi() {
         DEBUG_MSG("actual_world_size: " << actual_world_size);
     }
 
+    // Calculate neighbor rank
+    right_rank = world_rank + 1;
+    left_rank = world_rank - 1;
+    if (right_rank < 0 || right_rank >= actual_world_size || world_rank >= actual_world_size) {
+        right_rank = MPI_PROC_NULL;
+    }
+    if (left_rank < 0 || left_rank >= actual_world_size || world_rank >= actual_world_size) {
+        left_rank = MPI_PROC_NULL;
+    }
+
     // Optimization: Use MPI_COMM_SELF to read and write files to avoid synchronization overhead
     // Read file into buffer and fill the rest with max value
     TIMING_LOG_ONCE_START("mpi_read", world_rank);
@@ -213,16 +223,6 @@ void Solver::odd_even_sort_mpi() {
     }
     TIMING_END(mpi_read, world_rank);
     TIMING_LOG_ONCE_END("mpi_read", world_rank);
-
-    // Calculate neighbor rank
-    right_rank = world_rank + 1;
-    left_rank = world_rank - 1;
-    if (right_rank < 0 || right_rank >= actual_world_size || world_rank >= actual_world_size) {
-        right_rank = MPI_PROC_NULL;
-    }
-    if (left_rank < 0 || left_rank >= actual_world_size || world_rank >= actual_world_size) {
-        left_rank = MPI_PROC_NULL;
-    }
 
     // === odd-even sort start ===
     // Optimization: Use spreadsort to sort local data for better performance
