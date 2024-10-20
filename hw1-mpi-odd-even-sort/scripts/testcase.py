@@ -1,14 +1,16 @@
-import os
-import json
-from .build import build
-import struct
 import argparse
+import json
+import os
+import struct
+
+from .build import build
 
 
 class Args:
     verify = False
     local_dir = False
     testcase_dir = "testcases"
+    profile = "nsys"
     testcase = None
 
 
@@ -16,6 +18,9 @@ args = argparse.ArgumentParser()
 args.add_argument("--verify", action="store_true")
 args.add_argument("--local-dir", action="store_true")
 args.add_argument("--testcase-dir", type=str, default="testcases")
+args.add_argument(
+    "--profile", type=str, choices=["nsys", "vtune", "none"], default="none"
+)
 args.add_argument("testcase", type=str)
 
 
@@ -77,14 +82,28 @@ if __name__ == "__main__":
     if code != 0:
         print("Build failed")
         exit(1)
+    # Read the testcase
     tc = json.load(open(testcase_txt))
     # Remove old output
     if os.path.exists(outputs_out):
         os.remove(outputs_out)
     # Run the program
-    cmd = f"srun -N {tc['nodes']} -n {tc['procs']} ./hw1 {tc['n']} {testcase_in} {outputs_out}"
+    cmd_srun = f"srun -N {tc['nodes']} -n {tc['procs']}"
+    cmd_prog = f"./hw1 {tc['n']} {testcase_in} {outputs_out}"
+    if args.profile == "nsys":
+        outputs_report = f"nsys-reports/{testcase}"
+        os.makedirs("nsys-reports", exist_ok=True)
+        cmd = f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
+    elif args.profile == "vtune":
+        outputs_report = f"vtune-reports/{testcase}"
+        os.makedirs("vtune-reports", exist_ok=True)
+        cmd = f"{cmd_srun} vtune -collect hotspots -r {outputs_report} -- {cmd_prog}"
+    else:
+        cmd = f"{cmd_srun} {cmd_prog}"
     print(cmd)
+    print("========== Program Output ==========")
     code = os.system(cmd)
+    print("====================================")
     print(f"{cmd} finished with code {code}")
     if code != 0:
         print("Execution failed")

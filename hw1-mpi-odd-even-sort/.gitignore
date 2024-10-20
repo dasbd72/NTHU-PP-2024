@@ -298,3 +298,5 @@ env/*
 tests/*
 !tests/*.cc
 outputs/*
+nsys-reports/*
+vtune-reports/*
