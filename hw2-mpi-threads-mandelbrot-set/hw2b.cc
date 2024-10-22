@@ -106,6 +106,13 @@ class Solver {
     struct ThreadData {
         SharedData* shared;
     };
+    struct PNGFillThreadData {
+        const Solver* solver;
+        png_bytep row;
+        int start_pixel;
+        int end_pixel;
+        const int* buffer;
+    };
 #ifdef MPI_ENABLED
     struct MPITask {
         int start_pixel;
@@ -166,6 +173,11 @@ class Solver {
     void partial_mandelbrot_thread(ThreadData* thread_data);
     void partial_mandelbrot_single_thread(int start_pixel, int end_pixel, int* buffer, int buffer_offset);
     void write_png(const int* buffer) const;
+#if MULTITHREADED == 1
+    static void* pthreads_write_png_fill_rows_thread(void* arg);
+#endif
+    void write_png_fill_rows(png_bytep* rows, png_bytep row, const int* buffer) const;
+    void write_png_fill_rows_thread(PNGFillThreadData* thread_data) const;
 };
 
 int main(int argc, char** argv) {
@@ -593,31 +605,91 @@ void Solver::write_png(const int* buffer) const {
     png_set_compression_level(png_ptr, 0);
     TIMING_END(write_png_setup);
     TIMING_START(write_png_loop);
-    size_t row_size = 3 * width * sizeof(png_byte);
+    size_t row_size = 3 * width * height * sizeof(png_bytep);
+    png_bytep* rows = (png_bytep*)malloc(height * sizeof(png_bytep));
     png_bytep row = (png_bytep)malloc(row_size);
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int p = buffer[(height - 1 - y) * width + x];
-            png_bytep color = row + x * 3;
-            if (p != iters) {
-                if (p & 16) {
-                    color[0] = 240;
-                    color[1] = color[2] = p % 16 * 16;
-                } else {
-                    color[0] = p % 16 * 16;
-                    color[1] = color[2] = 0;
-                }
-            } else {
-                color[0] = color[1] = color[2] = 0;
-            }
-        }
-        png_write_row(png_ptr, row);
-    }
+    write_png_fill_rows(rows, row, buffer);
+    png_write_rows(png_ptr, rows, height);
     TIMING_END(write_png_loop);
     TIMING_START(write_png_cleanup);
     free(row);
+    free(rows);
     png_write_end(png_ptr, NULL);
     png_destroy_write_struct(&png_ptr, &info_ptr);
     fclose(fp);
     TIMING_END(write_png_cleanup);
+}
+
+#if MULTITHREADED == 1
+void* Solver::pthreads_write_png_fill_rows_thread(void* arg) {
+    PNGFillThreadData* thread_data = (PNGFillThreadData*)arg;
+    thread_data->solver->write_png_fill_rows_thread(thread_data);
+    return NULL;
+}
+#endif
+
+/*
+    A wrapper function to fill rows of the PNG image with multithreading.
+ */
+void Solver::write_png_fill_rows(png_bytep* rows, png_bytep row, const int* buffer) const {
+    for (int y = 0; y < height; ++y) {
+        rows[y] = row + y * 3 * width;
+    }
+
+    int pixels_per_thread = std::max(1000, (int)std::ceil((double)width * height / num_cpus));
+    int num_threads = std::min(num_cpus, (int)std::ceil((double)width * height / pixels_per_thread));
+
+    PNGFillThreadData thread_data_array[max_num_cpus];
+    for (int i = 0; i < num_threads; i++) {
+        thread_data_array[i].solver = this;
+        thread_data_array[i].row = row;
+        thread_data_array[i].start_pixel = std::min(height * width, i * pixels_per_thread);
+        thread_data_array[i].end_pixel = std::min(height * width, (i + 1) * pixels_per_thread);
+        thread_data_array[i].buffer = buffer;
+    }
+#if MULTITHREADED == 1
+    pthread_t threads[max_num_cpus];
+    for (int i = 0; i < num_threads; i++) {
+        pthread_create(&threads[i], NULL, pthreads_write_png_fill_rows_thread, (void*)&thread_data_array[i]);
+    }
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+#elif MULTITHREADED == 2
+#pragma omp parallel num_threads(num_threads)
+    {
+        write_png_fill_rows_thread(&thread_data_array[omp_get_thread_num()]);
+    }
+#else
+    for (int i = 0; i < num_threads; i++) {
+        write_png_fill_rows_thread(&thread_data_array[i]);
+    }
+#endif
+}
+
+/*
+    A function to fill rows of the PNG image with a single thread given a range of pixels.
+ */
+void Solver::write_png_fill_rows_thread(PNGFillThreadData* thread_data) const {
+    int start_pixel = thread_data->start_pixel;
+    int end_pixel = thread_data->end_pixel;
+    const int* buffer = thread_data->buffer;
+    png_bytep row = thread_data->row;
+    for (int pixel = start_pixel; pixel < end_pixel; ++pixel) {
+        int y = pixel / width;
+        int x = pixel % width;
+        int p = buffer[(height - 1 - y) * width + x];
+        png_bytep color = row + pixel * 3;
+        if (p != iters) {
+            if (p & 16) {
+                color[0] = 240;
+                color[1] = color[2] = p % 16 * 16;
+            } else {
+                color[0] = p % 16 * 16;
+                color[1] = color[2] = 0;
+            }
+        } else {
+            color[0] = color[1] = color[2] = 0;
+        }
+    }
 }
