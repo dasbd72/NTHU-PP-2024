@@ -3,9 +3,17 @@ import struct
 import tqdm
 import json
 import argparse
+import random
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-n", type=int, default=536870911)
+parser.add_argument(
+    "-v",
+    "--version",
+    type=str,
+    choices=["random", "reversed", "sorted"],
+    default="random",
+)
 parser.add_argument("testcase", type=str)
 
 if __name__ == "__main__":
@@ -19,8 +27,7 @@ if __name__ == "__main__":
 
     n = args.n
     testcase_dir = "/share/judge_dir/.judge_exe.tc.pp24s105"
-    testcase_in = f"{testcase_dir}/{args.testcase}.in"  # Reverse order
-    testcase_out = f"{testcase_dir}/{args.testcase}.out"  # Sorted order
+    testcase_in = f"{testcase_dir}/{args.testcase}.in"
     testcase_txt = f"{testcase_dir}/{args.testcase}.txt"
     batch_size = 100000
 
@@ -32,14 +39,26 @@ if __name__ == "__main__":
 
     if not os.path.exists(testcase_in):
         with open(testcase_in, "wb") as f:
-            for i in tqdm.tqdm(range(0, n, batch_size)):
-                size = min(batch_size, n - i)
-                f.write(
-                    struct.pack(f"{size}f", *range(n - i, n - i - size, -1))
-                )
-
-    if not os.path.exists(testcase_out):
-        with open(testcase_out, "wb") as f:
-            for i in tqdm.tqdm(range(0, n, batch_size)):
-                size = min(batch_size, n - i)
-                f.write(struct.pack(f"{size}f", *range(i + 1, i + 1 + size)))
+            if args.version == "random":
+                random.seed(42)
+                for i in tqdm.tqdm(range(0, n, batch_size)):
+                    size = min(batch_size, n - i)
+                    f.write(
+                        struct.pack(
+                            f"{size}f", *random.sample(range(1, n + 1), size)
+                        )
+                    )
+            elif args.version == "sorted":
+                for i in tqdm.tqdm(range(0, n, batch_size)):
+                    size = min(batch_size, n - i)
+                    f.write(
+                        struct.pack(f"{size}f", *range(i + 1, i + 1 + size))
+                    )
+            elif args.version == "reversed":
+                for i in tqdm.tqdm(range(0, n, batch_size)):
+                    size = min(batch_size, n - i)
+                    f.write(
+                        struct.pack(
+                            f"{size}f", *range(n - i, n - i - size, -1)
+                        )
+                    )
