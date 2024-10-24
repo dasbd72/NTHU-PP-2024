@@ -16,113 +16,164 @@ class Args:
     testcase = None
 
 
-args = argparse.ArgumentParser()
-args.add_argument("--verify", action="store_true")
-args.add_argument("--local-dir", action="store_true")
-args.add_argument("--testcase-dir", type=str, default="testcases")
-args.add_argument("--nodes", "-N", type=int)
-args.add_argument("--procs", "-n", type=int)
-args.add_argument(
-    "--profile", type=str, choices=["nsys", "vtune", "none"], default="none"
-)
-args.add_argument("testcase", type=str)
+def parse_arguments() -> Args:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify output against expected results",
+    )
+    parser.add_argument(
+        "--local-dir",
+        action="store_true",
+        help="Use local directory for output",
+    )
+    parser.add_argument(
+        "--testcase-dir",
+        type=str,
+        default="testcases",
+        help="Directory of testcases",
+    )
+    parser.add_argument("--nodes", "-N", type=int, help="Number of nodes")
+    parser.add_argument("--procs", "-n", type=int, help="Number of processors")
+    parser.add_argument(
+        "--profile",
+        type=str,
+        choices=["nsys", "vtune", "none"],
+        default="none",
+        help="Profiling tool",
+    )
+    parser.add_argument("testcase", type=str, help="Testcase name")
+    return parser.parse_args()
 
 
-def verify(n, outputs_out, testcase_out):
+def verify_output(n, outputs_out, testcase_out):
+    """Compares the program's output with the expected output."""
+    batch_size = 100000
     with open(outputs_out, "rb") as output_f, open(
         testcase_out, "rb"
     ) as expected_f:
-        batch_size = 100000
         for i in range(0, n, batch_size):
-            b_output = output_f.read(batch_size * 4)
-            b_expected = expected_f.read(batch_size * 4)
+            output_chunk = output_f.read(batch_size * 4)
+            expected_chunk = expected_f.read(batch_size * 4)
             size = min(batch_size, n - i)
-            output = struct.unpack(f"{size}f", b_output)
-            expected = struct.unpack(f"{size}f", b_expected)
+            output = struct.unpack(f"{size}f", output_chunk)
+            expected = struct.unpack(f"{size}f", expected_chunk)
+
             if output != expected:
-                print("Test failed at index", i)
-                if size < 10:
-                    print(f"Expected: {expected}")
-                    print(f"Got: {output}")
-                else:
-                    print(f"Expected: {expected[0:10]}...")
-                    print(f"Got: {output[0:10]}...")
-                return 1
-    return 0
+                print(f"Test failed at index {i}")
+                print_mismatch(output, expected, size)
+                return False
+    return True
 
 
-if __name__ == "__main__":
-    args: Args = args.parse_args()
-    testcase = args.testcase
-    if not testcase:
-        print("Testcase not provided")
-        exit(1)
-    print(f"Running testcase {testcase}")
-    testcase_txt = f"{args.testcase_dir}/{testcase}.txt"
-    testcase_in = f"{args.testcase_dir}/{testcase}.in"
-    testcase_out = f"{args.testcase_dir}/{testcase}.out"
-    if args.local_dir:
-        outputs_dir = "outputs"
+def print_mismatch(output, expected, size):
+    """Prints mismatched output for debugging."""
+    if size < 10:
+        print(f"Expected: {expected}")
+        print(f"Got: {output}")
     else:
-        outputs_dir = "/share/judge_dir/.judge_exe.pp24s105"
-    outputs_out = f"{outputs_dir}/{testcase}.out"
-    # Check if the testcase exists
-    if not os.path.exists(testcase_txt):
-        print("Testcase not found")
-        exit(1)
-    if not os.path.exists(testcase_in):
-        print("Testcase input not found")
-        exit(1)
-    if args.verify and not os.path.exists(testcase_out):
-        print("Testcase output not found")
-        exit(1)
-    if os.path.exists(outputs_dir):
-        # Check mode 700
-        if os.stat(outputs_dir).st_mode & 0o777 != 0o700:
-            os.chmod(outputs_dir, 0o700)
-    os.makedirs(outputs_dir, exist_ok=True, mode=0o700)
+        print(f"Expected: {expected[:10]}...")
+        print(f"Got: {output[:10]}...")
+
+
+def validate_files_exist(files):
+    """Ensures all required testcase files exist."""
+    for file in files:
+        if not os.path.exists(file):
+            print(f"{file} not found")
+            exit(1)
+
+
+def ensure_output_directory_exists(directory):
+    """Ensures the output directory exists with correct permissions."""
+    if not os.path.exists(directory):
+        os.makedirs(directory, mode=0o700)
+    elif os.stat(directory).st_mode & 0o777 != 0o700:
+        os.chmod(directory, 0o700)
+
+
+def run_testcase(testcase, args: Args):
+    """Main logic for running the testcase."""
+    outputs_dir = (
+        "outputs" if args.local_dir else "/share/judge_dir/.judge_exe.pp24s105"
+    )
+    outputs_out = os.path.join(outputs_dir, f"{testcase}.out")
+
+    # Validate testcase files
+    testcase_txt = os.path.join(args.testcase_dir, f"{testcase}.txt")
+    testcase_in = os.path.join(args.testcase_dir, f"{testcase}.in")
+    testcase_out = os.path.join(args.testcase_dir, f"{testcase}.out")
+    validate_files_exist([testcase_txt, testcase_in])
+
+    if args.verify:
+        validate_files_exist([testcase_out])
+
+    ensure_output_directory_exists(outputs_dir)
+
     # Build the program
-    code = build()
-    if code != 0:
+    if build() != 0:
         print("Build failed")
         exit(1)
-    # Read the testcase
-    tc = json.load(open(testcase_txt))
+
+    # Run the program
+    tc = load_testcase_config(testcase_txt, args)
+    clean_old_output(outputs_out)
+    execute_program(tc, testcase_in, outputs_out, args)
+
+    # Verification if needed
+    if args.verify:
+        if not verify_output(tc["n"], outputs_out, testcase_out):
+            print("Verification failed")
+            exit(1)
+        else:
+            print("Test passed")
+    exit(0)
+
+
+def load_testcase_config(testcase_txt, args: Args):
+    """Loads the testcase configuration and applies node/proc overrides."""
+    with open(testcase_txt) as f:
+        tc = json.load(f)
     if args.nodes is not None:
         tc["nodes"] = args.nodes
     if args.procs is not None:
         tc["procs"] = args.procs
-    # Remove old output
+    return tc
+
+
+def clean_old_output(outputs_out):
+    """Removes old output files if they exist."""
     if os.path.exists(outputs_out):
         os.remove(outputs_out)
-    # Run the program
+
+
+def execute_program(tc, testcase_in, outputs_out, args: Args):
+    """Builds and executes the command to run the program."""
     cmd_srun = f"srun -N {tc['nodes']} -n {tc['procs']}"
     cmd_prog = f"./hw1 {tc['n']} {testcase_in} {outputs_out}"
+
     if args.profile == "nsys":
-        outputs_report = f"nsys-reports/{testcase}/report"
+        outputs_report = f"nsys-reports/{args.testcase}/report"
         os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
         cmd = f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
     elif args.profile == "vtune":
-        outputs_report = f"vtune-reports/{testcase}"
+        outputs_report = f"vtune-reports/{args.testcase}"
         os.makedirs("vtune-reports", exist_ok=True)
         cmd = f"{cmd_srun} vtune -collect hotspots -r {outputs_report} -- {cmd_prog}"
     else:
         cmd = f"{cmd_srun} {cmd_prog}"
+
     print(cmd)
     print("========== Program Output ==========")
     code = os.system(cmd)
     print("====================================")
-    print(f"{cmd} finished with code {code}")
-    if code != 0:
-        print("Execution failed")
-        exit(1)
-    if not args.verify:
-        exit(0)
 
-    # Compare the output
-    code = verify(tc["n"], outputs_out, testcase_out)
     if code != 0:
-        print("Verification failed")
+        print("Execution failed with code", code)
         exit(1)
-    print("Test passed")
-    exit(0)
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    run_testcase(args.testcase, args)
