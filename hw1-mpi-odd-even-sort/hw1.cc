@@ -175,7 +175,9 @@ void Solver::odd_even_sort_seq() {
     MPI_File_close(&output_file);
 #endif
     TIMING_END(mpi_write, world_rank);
+#ifndef NO_FINALIZE
     delete[] buffer;
+#endif
 }
 
 void Solver::odd_even_sort_mpi() {
@@ -326,7 +328,9 @@ void Solver::odd_even_sort_mpi() {
 #endif
     TIMING_END(mpi_write, world_rank);
     TIMING_LOG_ONCE_END("mpi_write", world_rank);
+#ifndef NO_FINALIZE
     delete[] buffer;
+#endif
 }
 
 void Solver::merge_left(int n, float *&left, float *&right, float *&buffer) {
