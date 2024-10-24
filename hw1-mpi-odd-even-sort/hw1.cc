@@ -62,7 +62,6 @@ int Solver::solve(int argc, char **argv) {
     }
 
     // Initialize mpi
-    NVTX_RANGE_START(solve_all)
     NVTX_RANGE_START(mpi_init)
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -92,7 +91,6 @@ int Solver::solve(int argc, char **argv) {
     MPI_Finalize();
     NVTX_RANGE_END()
 #endif
-    NVTX_RANGE_END()  // solve_all
     return 0;
 }
 
