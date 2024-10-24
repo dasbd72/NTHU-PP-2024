@@ -5,6 +5,8 @@ import json
 import argparse
 import random
 
+username = os.getenv("USER")
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-n", type=int, default=536870911)
 parser.add_argument(
@@ -26,7 +28,7 @@ if __name__ == "__main__":
         raise ValueError("Testcase not provided")
 
     n = args.n
-    testcase_dir = "/share/judge_dir/.judge_exe.tc.pp24s105"
+    testcase_dir = f"/share/judge_dir/.judge_exe.tc.{username}"
     testcase_in = f"{testcase_dir}/{args.testcase}.in"
     testcase_txt = f"{testcase_dir}/{args.testcase}.txt"
     batch_size = 100000
