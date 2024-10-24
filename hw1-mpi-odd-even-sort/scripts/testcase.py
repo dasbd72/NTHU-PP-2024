@@ -69,7 +69,7 @@ if __name__ == "__main__":
     if not os.path.exists(testcase_in):
         print("Testcase input not found")
         exit(1)
-    if not os.path.exists(testcase_out):
+    if args.verify and not os.path.exists(testcase_out):
         print("Testcase output not found")
         exit(1)
     if os.path.exists(outputs_dir):
