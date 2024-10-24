@@ -166,7 +166,7 @@ void Solver::odd_even_sort_seq() {
 #endif
     TIMING_END(mpi_read, world_rank);
 
-    boost::sort::spreadsort::spreadsort(buffer, buffer + array_size);
+    boost::sort::spreadsort::float_sort(buffer, buffer + array_size);
 
     TIMING_START(mpi_write);
     MPI_File_open(MPI_COMM_SELF, output_filename, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &output_file);
@@ -237,7 +237,7 @@ void Solver::odd_even_sort_mpi() {
     // Sort local
     TIMING_LOG_ONCE_START("local_sort", world_rank);
     TIMING_START(local_sort);
-    boost::sort::spreadsort::spreadsort(local_data, local_data + local_size);
+    boost::sort::spreadsort::float_sort(local_data, local_data + local_size);
     TIMING_END(local_sort, world_rank);
     TIMING_LOG_ONCE_END("local_sort", world_rank);
     TIMING_INIT(mpi_exchange_1);
