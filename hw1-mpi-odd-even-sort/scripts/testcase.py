@@ -10,6 +10,8 @@ class Args:
     verify = False
     local_dir = False
     testcase_dir = "testcases"
+    nodes = None
+    procs = None
     profile = "nsys"
     testcase = None
 
@@ -18,6 +20,8 @@ args = argparse.ArgumentParser()
 args.add_argument("--verify", action="store_true")
 args.add_argument("--local-dir", action="store_true")
 args.add_argument("--testcase-dir", type=str, default="testcases")
+args.add_argument("--nodes", "-N", type=int)
+args.add_argument("--procs", "-n", type=int)
 args.add_argument(
     "--profile", type=str, choices=["nsys", "vtune", "none"], default="none"
 )
@@ -84,6 +88,10 @@ if __name__ == "__main__":
         exit(1)
     # Read the testcase
     tc = json.load(open(testcase_txt))
+    if args.nodes is not None:
+        tc["nodes"] = args.nodes
+    if args.procs is not None:
+        tc["procs"] = args.procs
     # Remove old output
     if os.path.exists(outputs_out):
         os.remove(outputs_out)
