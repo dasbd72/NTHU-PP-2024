@@ -157,10 +157,6 @@ def execute_program(tc, testcase_in, outputs_out, args: Args):
         outputs_report = f"nsys-reports/{args.testcase}/report"
         os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
         cmd = f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
-    elif args.profile == "vtune":
-        outputs_report = f"vtune-reports/{args.testcase}"
-        os.makedirs("vtune-reports", exist_ok=True)
-        cmd = f"{cmd_srun} vtune -collect hotspots -r {outputs_report} -- {cmd_prog}"
     else:
         cmd = f"{cmd_srun} {cmd_prog}"
 
