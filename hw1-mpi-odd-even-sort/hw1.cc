@@ -142,12 +142,14 @@ int Solver::solve(int argc, char **argv) {
     }
 
     // Optimization: Return without finalizing mpi
+#ifndef NO_FINALIZE
     // Finalize mpi
-    // TIMING_LOG_ONCE_START("mpi_finalize", world_rank);
-    // TIMING_START(mpi_finalize);
-    // MPI_Finalize();
-    // TIMING_END(mpi_finalize, world_rank);
-    // TIMING_LOG_ONCE_END("mpi_finalize", world_rank);
+    TIMING_LOG_ONCE_START("mpi_finalize", world_rank);
+    TIMING_START(mpi_finalize);
+    MPI_Finalize();
+    TIMING_END(mpi_finalize, world_rank);
+    TIMING_LOG_ONCE_END("mpi_finalize", world_rank);
+#endif
     TIMING_END(solve_all, world_rank);
     return 0;
 }
@@ -159,7 +161,9 @@ void Solver::odd_even_sort_seq() {
     TIMING_START(mpi_read);
     MPI_File_open(MPI_COMM_SELF, input_filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &input_file);
     MPI_File_read_at(input_file, 0, buffer, array_size, MPI_FLOAT, MPI_STATUS_IGNORE);
+#ifndef NO_FINALIZE
     MPI_File_close(&input_file);
+#endif
     TIMING_END(mpi_read, world_rank);
 
     boost::sort::spreadsort::spreadsort(buffer, buffer + array_size);
@@ -167,7 +171,9 @@ void Solver::odd_even_sort_seq() {
     TIMING_START(mpi_write);
     MPI_File_open(MPI_COMM_SELF, output_filename, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &output_file);
     MPI_File_write_at(output_file, 0, buffer, array_size, MPI_FLOAT, MPI_STATUS_IGNORE);
+#ifndef NO_FINALIZE
     MPI_File_close(&output_file);
+#endif
     TIMING_END(mpi_write, world_rank);
     delete[] buffer;
 }
@@ -217,7 +223,9 @@ void Solver::odd_even_sort_mpi() {
     if (world_rank < actual_world_size) {
         MPI_File_read_at(input_file, sizeof(float) * local_start, local_data, local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
     }
+#ifndef NO_FINALIZE
     MPI_File_close(&input_file);
+#endif
     for (int i = local_size; i < max_local_size; i++) {
         local_data[i] = std::numeric_limits<float>::max();
     }
@@ -313,7 +321,9 @@ void Solver::odd_even_sort_mpi() {
     if (world_rank < actual_world_size) {
         MPI_File_write_at(output_file, sizeof(float) * local_start, local_data, local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
     }
+#ifndef NO_FINALIZE
     MPI_File_close(&output_file);
+#endif
     TIMING_END(mpi_write, world_rank);
     TIMING_LOG_ONCE_END("mpi_write", world_rank);
     delete[] buffer;

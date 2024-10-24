@@ -1,6 +1,7 @@
 CC = mpicc
 CXX = mpicxx
 CXXFLAGS = -std=c++17 -O3 -lm -Wall -Wextra -march=native
+CXXFLAGS += -DNO_FINALIZE
 CFLAGS = -O3 -lm
 TARGETS = hw1
 
