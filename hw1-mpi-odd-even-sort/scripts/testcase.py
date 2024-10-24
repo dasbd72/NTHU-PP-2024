@@ -91,8 +91,8 @@ if __name__ == "__main__":
     cmd_srun = f"srun -N {tc['nodes']} -n {tc['procs']}"
     cmd_prog = f"./hw1 {tc['n']} {testcase_in} {outputs_out}"
     if args.profile == "nsys":
-        outputs_report = f"nsys-reports/{testcase}"
-        os.makedirs("nsys-reports", exist_ok=True)
+        outputs_report = f"nsys-reports/{testcase}/report"
+        os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
         cmd = f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
     elif args.profile == "vtune":
         outputs_report = f"vtune-reports/{testcase}"
