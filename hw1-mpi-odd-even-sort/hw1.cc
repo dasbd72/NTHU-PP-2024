@@ -14,71 +14,15 @@
 #endif  // DEBUG
 
 #ifdef TIMING
-#include <ctime>
-#define TIMING_START(arg)          \
-    struct timespec __start_##arg; \
-    clock_gettime(CLOCK_MONOTONIC, &__start_##arg);
-#define TIMING_END(arg, i)                                                                    \
-    {                                                                                         \
-        struct timespec __temp_##arg, __end_##arg;                                            \
-        double __duration_##arg;                                                              \
-        clock_gettime(CLOCK_MONOTONIC, &__end_##arg);                                         \
-        if ((__end_##arg.tv_nsec - __start_##arg.tv_nsec) < 0) {                              \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec - 1;              \
-            __temp_##arg.tv_nsec = 1000000000 + __end_##arg.tv_nsec - __start_##arg.tv_nsec;  \
-                                                                                              \
-        } else {                                                                              \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec;                  \
-            __temp_##arg.tv_nsec = __end_##arg.tv_nsec - __start_##arg.tv_nsec;               \
-        }                                                                                     \
-        __duration_##arg = __temp_##arg.tv_sec + (double)__temp_##arg.tv_nsec / 1000000000.0; \
-        std::cerr << #arg << " " << i << " took " << __duration_##arg << "s.\n";              \
-        std::cerr.flush();                                                                    \
-    }
-#define TIMING_INIT(arg) double __duration_##arg = 0;
-#define TIMING_ACCUM(arg)                                                                      \
-    {                                                                                          \
-        struct timespec __temp_##arg, __end_##arg;                                             \
-        clock_gettime(CLOCK_MONOTONIC, &__end_##arg);                                          \
-        if ((__end_##arg.tv_nsec - __start_##arg.tv_nsec) < 0) {                               \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec - 1;               \
-            __temp_##arg.tv_nsec = 1000000000 + __end_##arg.tv_nsec - __start_##arg.tv_nsec;   \
-                                                                                               \
-        } else {                                                                               \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec;                   \
-            __temp_##arg.tv_nsec = __end_##arg.tv_nsec - __start_##arg.tv_nsec;                \
-        }                                                                                      \
-        __duration_##arg += __temp_##arg.tv_sec + (double)__temp_##arg.tv_nsec / 1000000000.0; \
-    }
-#define TIMING_FIN(arg, i)                                                   \
-    std::cerr << #arg << " " << i << " took " << __duration_##arg << "s.\n"; \
-    std::cerr.flush();
-#define TIMING_LOG_ONCE_START(task, id) \
-    std::cerr << "TIMING_LOG_ONCE_START task " task << " id " << id << " ts " << MPI_Wtime() << "\n";
-#define TIMING_LOG_ONCE_END(task, id) \
-    std::cerr << "TIMING_LOG_ONCE_END task " task << " id " << id << " ts " << MPI_Wtime() << "\n";
-#define TIMING_LOG_MULTI_COMM_START(task, id, iter, src, dst) \
-    std::cerr << "TIMING_LOG_MULTI_COMM_START task " task << " id " << id << " iter " << iter << " src " << src << " dst " << dst << " ts " << MPI_Wtime() << "\n";
-#define TIMING_LOG_MULTI_COMM_END(task, id, iter, src, dst) \
-    std::cerr << "TIMING_LOG_MULTI_COMM_END task " task << " id " << id << " iter " << iter << " src " << src << " dst " << dst << " ts " << MPI_Wtime() << "\n";
+#include <nvtx3/nvtx3.hpp>
+#define NVTX_RANGE_START(arg) \
+    nvtxRangePushA(#arg);
+#define NVTX_RANGE_END() \
+    nvtxRangePop();
 #else
-#define TIMING_START(arg) \
+#define NVTX_RANGE_START(arg) \
     {}
-#define TIMING_END(arg, i) \
-    {}
-#define TIMING_INIT(arg) \
-    {}
-#define TIMING_ACCUM(arg) \
-    {}
-#define TIMING_FIN(arg, i) \
-    {}
-#define TIMING_LOG_ONCE_START(task, id) \
-    {}
-#define TIMING_LOG_ONCE_END(task, id) \
-    {}
-#define TIMING_LOG_MULTI_COMM_START(task, id, iter, src, dst) \
-    {}
-#define TIMING_LOG_MULTI_COMM_END(task, id, iter, src, dst) \
+#define NVTX_RANGE_END() \
     {}
 #endif  // TIMING
 
@@ -118,12 +62,12 @@ int Solver::solve(int argc, char **argv) {
     }
 
     // Initialize mpi
-    TIMING_START(solve_all);
-    TIMING_START(mpi_init);
+    NVTX_RANGE_START(solve_all)
+    NVTX_RANGE_START(mpi_init)
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    TIMING_END(mpi_init, world_rank);
+    NVTX_RANGE_END()
 
     array_size = std::stoi(argv[1]);
     input_filename = argv[2];
@@ -131,26 +75,24 @@ int Solver::solve(int argc, char **argv) {
 
     if (array_size <= MIN_SIZE_PER_PROC) {
         if (world_rank == 0) {
-            TIMING_START(odd_even_sort_seq);
+            NVTX_RANGE_START(odd_even_sort_seq)
             odd_even_sort_seq();
-            TIMING_END(odd_even_sort_seq, world_rank);
+            NVTX_RANGE_END()
         }
     } else {
-        TIMING_START(odd_even_sort_mpi);
+        NVTX_RANGE_START(odd_even_sort_mpi)
         odd_even_sort_mpi();
-        TIMING_END(odd_even_sort_mpi, world_rank);
+        NVTX_RANGE_END()
     }
 
     // Optimization: Return without finalizing mpi
 #ifndef NO_FINALIZE
     // Finalize mpi
-    TIMING_LOG_ONCE_START("mpi_finalize", world_rank);
-    TIMING_START(mpi_finalize);
+    NVTX_RANGE_START(mpi_finalize)
     MPI_Finalize();
-    TIMING_END(mpi_finalize, world_rank);
-    TIMING_LOG_ONCE_END("mpi_finalize", world_rank);
+    NVTX_RANGE_END()
 #endif
-    TIMING_END(solve_all, world_rank);
+    NVTX_RANGE_END()  // solve_all
     return 0;
 }
 
@@ -158,23 +100,25 @@ void Solver::odd_even_sort_seq() {
     MPI_File input_file, output_file;
     float *buffer = new float[array_size];
 
-    TIMING_START(mpi_read);
+    NVTX_RANGE_START(mpi_read)
     MPI_File_open(MPI_COMM_SELF, input_filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &input_file);
     MPI_File_read_at(input_file, 0, buffer, array_size, MPI_FLOAT, MPI_STATUS_IGNORE);
 #ifndef NO_FINALIZE
     MPI_File_close(&input_file);
 #endif
-    TIMING_END(mpi_read, world_rank);
+    NVTX_RANGE_END()
 
+    NVTX_RANGE_START(local_sort)
     boost::sort::spreadsort::float_sort(buffer, buffer + array_size);
+    NVTX_RANGE_END()
 
-    TIMING_START(mpi_write);
+    NVTX_RANGE_START(mpi_write)
     MPI_File_open(MPI_COMM_SELF, output_filename, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &output_file);
     MPI_File_write_at(output_file, 0, buffer, array_size, MPI_FLOAT, MPI_STATUS_IGNORE);
 #ifndef NO_FINALIZE
     MPI_File_close(&output_file);
 #endif
-    TIMING_END(mpi_write, world_rank);
+    NVTX_RANGE_END()
 #ifndef NO_FINALIZE
     delete[] buffer;
 #endif
@@ -219,8 +163,7 @@ void Solver::odd_even_sort_mpi() {
 
     // Optimization: Use MPI_COMM_SELF to read and write files to avoid synchronization overhead
     // Read file into buffer and fill the rest with max value
-    TIMING_LOG_ONCE_START("mpi_read", world_rank);
-    TIMING_START(mpi_read);
+    NVTX_RANGE_START(mpi_read)
     MPI_File_open(MPI_COMM_SELF, input_filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &input_file);
     if (world_rank < actual_world_size) {
         MPI_File_read_at(input_file, sizeof(float) * local_start, local_data, local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
@@ -231,20 +174,14 @@ void Solver::odd_even_sort_mpi() {
     for (int i = local_size; i < max_local_size; i++) {
         local_data[i] = std::numeric_limits<float>::max();
     }
-    TIMING_END(mpi_read, world_rank);
-    TIMING_LOG_ONCE_END("mpi_read", world_rank);
+    NVTX_RANGE_END()
 
     // === odd-even sort start ===
     // Optimization: Use spreadsort to sort local data for better performance
     // Sort local
-    TIMING_LOG_ONCE_START("local_sort", world_rank);
-    TIMING_START(local_sort);
+    NVTX_RANGE_START(local_sort)
     boost::sort::spreadsort::float_sort(local_data, local_data + local_size);
-    TIMING_END(local_sort, world_rank);
-    TIMING_LOG_ONCE_END("local_sort", world_rank);
-    TIMING_INIT(mpi_exchange_1);
-    TIMING_INIT(mpi_exchange_2);
-    TIMING_INIT(local_merge);
+    NVTX_RANGE_END()
     // Initialize neighbor buffer
     for (int p = 0; p < actual_world_size; p++) {
         // Optimization: Compute to communicate with left or right rank instead of casing under odd or even phase
@@ -259,66 +196,50 @@ void Solver::odd_even_sort_mpi() {
             if (left_rank == MPI_PROC_NULL)
                 continue;
             // Pre-check if the two ranks are well-sorted
-            TIMING_LOG_MULTI_COMM_START("mpi_exchange_1", world_rank, p, world_rank, left_rank);
-            TIMING_START(mpi_exchange_1);
+            NVTX_RANGE_START(mpi_pre_exchange_right)
             MPI_Sendrecv(local_data, 1, MPI_FLOAT, left_rank, 0, neighbor_data + max_local_size - 1, 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TIMING_ACCUM(mpi_exchange_1);
-            TIMING_LOG_MULTI_COMM_END("mpi_exchange_1", world_rank, p, world_rank, left_rank);
+            NVTX_RANGE_END()
             if (*(neighbor_data + max_local_size - 1) <= *local_data) {
                 // Skip since sorted
                 continue;
             }
             // Exchange data
             if (max_local_size > 1) {
-                TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, left_rank);
-                TIMING_START(mpi_exchange_2);
+                NVTX_RANGE_START(mpi_exchange_right)
                 MPI_Sendrecv(local_data + 1, max_local_size - 1, MPI_FLOAT, left_rank, 0, neighbor_data, max_local_size - 1, MPI_FLOAT, left_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                TIMING_ACCUM(mpi_exchange_2);
-                TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, left_rank);
+                NVTX_RANGE_END()
             }
             // Merge
-            TIMING_LOG_MULTI_COMM_START("local_merge", world_rank, p, world_rank, left_rank);
-            TIMING_START(local_merge);
+            NVTX_RANGE_START(merge_right)
             merge_right(max_local_size, neighbor_data, local_data, merge_buffer);
-            TIMING_ACCUM(local_merge);
-            TIMING_LOG_MULTI_COMM_END("local_merge", world_rank, p, world_rank, left_rank);
+            NVTX_RANGE_END()
         } else {
             // Communicate with right
             if (right_rank == MPI_PROC_NULL)
                 continue;
             // Pre-check if the two ranks are well-sorted
-            TIMING_LOG_MULTI_COMM_START("mpi_exchange_1", world_rank, p, world_rank, right_rank);
-            TIMING_START(mpi_exchange_1);
+            NVTX_RANGE_START(mpi_pre_exchange_left)
             MPI_Sendrecv(local_data + max_local_size - 1, 1, MPI_FLOAT, right_rank, 0, neighbor_data, 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            TIMING_ACCUM(mpi_exchange_1);
-            TIMING_LOG_MULTI_COMM_END("mpi_exchange_1", world_rank, p, world_rank, right_rank);
+            NVTX_RANGE_END()
             if (*(local_data + max_local_size - 1) <= *neighbor_data) {
                 // Skip since sorted
                 continue;
             }
             // Exchange data
             if (max_local_size > 1) {
-                TIMING_LOG_MULTI_COMM_START("mpi_exchange_2", world_rank, p, world_rank, right_rank);
-                TIMING_START(mpi_exchange_2);
+                NVTX_RANGE_START(mpi_exchange_left)
                 MPI_Sendrecv(local_data, max_local_size - 1, MPI_FLOAT, right_rank, 0, neighbor_data + 1, max_local_size - 1, MPI_FLOAT, right_rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                TIMING_ACCUM(mpi_exchange_2);
-                TIMING_LOG_MULTI_COMM_END("mpi_exchange_2", world_rank, p, world_rank, right_rank);
+                NVTX_RANGE_END()
             }
             // Merge
-            TIMING_LOG_MULTI_COMM_START("local_merge", world_rank, p, world_rank, right_rank);
-            TIMING_START(local_merge);
+            NVTX_RANGE_START(merge_left)
             merge_left(max_local_size, local_data, neighbor_data, merge_buffer);
-            TIMING_ACCUM(local_merge);
-            TIMING_LOG_MULTI_COMM_END("local_merge", world_rank, p, world_rank, right_rank);
+            NVTX_RANGE_END()
         }
     }
-    TIMING_FIN(mpi_exchange_1, world_rank);
-    TIMING_FIN(mpi_exchange_2, world_rank);
-    TIMING_FIN(local_merge, world_rank);
     // === odd-even sort end ===
 
-    TIMING_LOG_ONCE_START("mpi_write", world_rank);
-    TIMING_START(mpi_write);
+    NVTX_RANGE_START(mpi_write)
     MPI_File_open(MPI_COMM_SELF, output_filename, MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &output_file);
     if (world_rank < actual_world_size) {
         MPI_File_write_at(output_file, sizeof(float) * local_start, local_data, local_size, MPI_FLOAT, MPI_STATUS_IGNORE);
@@ -326,8 +247,7 @@ void Solver::odd_even_sort_mpi() {
 #ifndef NO_FINALIZE
     MPI_File_close(&output_file);
 #endif
-    TIMING_END(mpi_write, world_rank);
-    TIMING_LOG_ONCE_END("mpi_write", world_rank);
+    NVTX_RANGE_END()
 #ifndef NO_FINALIZE
     delete[] buffer;
 #endif
