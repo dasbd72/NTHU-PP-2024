@@ -189,10 +189,10 @@ void Solver::odd_even_sort_mpi() {
     int left_rank, right_rank;
 
     max_local_size = std::min(array_size, std::max((int)ceil((double)array_size / world_size), MIN_SIZE_PER_PROC));
+    actual_world_size = std::min(world_size, (int)ceil((double)array_size / max_local_size));
     local_start = std::min(array_size, world_rank * max_local_size);
     local_end = std::min(array_size, local_start + max_local_size);
     local_size = local_end - local_start;
-    actual_world_size = std::min(world_size, (int)ceil((double)array_size / max_local_size));
 
     buffer = new float[max_local_size * 3];
     local_data = buffer;
