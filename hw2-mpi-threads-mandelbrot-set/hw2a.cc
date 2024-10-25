@@ -189,9 +189,11 @@ int Solver::solve(int argc, char** argv) {
 #endif
 
 #ifdef MPI_ENABLED
-    // NVTX_RANGE_START(MPI_Finalize)
-    // MPI_Finalize();
-    // NVTX_RANGE_END()
+#ifndef NO_FINALIZE
+    NVTX_RANGE_START(MPI_Finalize)
+    MPI_Finalize();
+    NVTX_RANGE_END()
+#endif
 #endif
     NVTX_RANGE_END()
     return 0;
@@ -217,7 +219,9 @@ void Solver::random_choices(int* buffer, int buffer_size, int seed, int chunk_si
             buffer[chunk_start + j] = i + j;
         }
     }
+#ifndef NO_FINALIZE
     free(chunks);
+#endif
 }
 
 void Solver::mandelbrot() {
@@ -280,9 +284,11 @@ void Solver::mandelbrot_mpi() {
         write_png(buffer);
         NVTX_RANGE_END()
     }
+#ifndef NO_FINALIZE
     free(pixels);
     free(tmp_buffer);
     free(buffer);
+#endif
 }
 #endif
 
@@ -483,11 +489,13 @@ void Solver::write_png(const int* buffer) const {
     png_write_rows(png_ptr, rows, height);
     NVTX_RANGE_END()
     NVTX_RANGE_START(write_png_cleanup)
+    png_write_end(png_ptr, NULL);
+#ifndef NO_FINALIZE
     free(row);
     free(rows);
-    png_write_end(png_ptr, NULL);
     png_destroy_write_struct(&png_ptr, &info_ptr);
     fclose(fp);
+#endif
     NVTX_RANGE_END()
 }
 
