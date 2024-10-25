@@ -5,8 +5,8 @@ CXXFLAGS += -DNO_FINALIZE
 CFLAGS = -O3 -lm
 TARGETS = hw1
 
-ifeq ($(TIMING), 1)
-	CXXFLAGS += -DTIMING
+ifeq ($(PROFILING), 1)
+	CXXFLAGS += -DPROFILING
 endif
 
 ifeq ($(DEBUG), 1)

@@ -1,5 +1,6 @@
 #!/bin/sh
-export TIMING=0
+export TIMING=0 # deprecated
+export PROFILING=0
 export DEBUG=0
 export SANITIZE=0
 

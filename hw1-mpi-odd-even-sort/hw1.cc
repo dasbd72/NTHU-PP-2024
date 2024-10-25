@@ -52,7 +52,7 @@ enum { max_splits = 14,
     {}
 #endif  // DEBUG
 
-#ifdef TIMING
+#ifdef PROFILING
 #include <nvtx3/nvtx3.hpp>
 #define NVTX_RANGE_START(arg) \
     nvtxRangePushA(#arg);
@@ -63,7 +63,7 @@ enum { max_splits = 14,
     {}
 #define NVTX_RANGE_END() \
     {}
-#endif  // TIMING
+#endif  // PROFILING
 
 class Solver {
    public:
