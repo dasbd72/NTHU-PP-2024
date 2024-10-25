@@ -424,7 +424,7 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
 
 void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer) {
     NVTX_RANGE_START(partial_mandelbrot_sort)
-    boost::sort::spreadsort::spreadsort(pixels, pixels + num_pixels);
+    boost::sort::spreadsort::integer_sort(pixels, pixels + num_pixels);
     NVTX_RANGE_END()
     // mandelbrot set
     int pi = 0;
