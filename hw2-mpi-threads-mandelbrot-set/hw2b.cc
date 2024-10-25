@@ -432,7 +432,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     NVTX_RANGE_START(partial_mandelbrot_pixels_vec_8)
     // Constants
     const int vec_8_size = 8;
-    const int mini_iters = 500;
+    const int mini_iters = std::min(500, iters);
     // Declare variables
     // Coordinates
     __m256i vec_p;
