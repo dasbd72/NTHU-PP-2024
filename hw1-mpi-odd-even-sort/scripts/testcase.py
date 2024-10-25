@@ -13,6 +13,7 @@ class Args:
     nodes = None
     procs = None
     profile = "nsys"
+    report_name = None
     testcase = None
 
 
@@ -42,6 +43,11 @@ def parse_arguments() -> Args:
         choices=["nsys", "vtune", "none"],
         default="none",
         help="Profiling tool",
+    )
+    parser.add_argument(
+        "--report-name",
+        type=str,
+        help="Name of the report (only used with --profile=nsys)",
     )
     parser.add_argument("testcase", type=str, help="Testcase name")
     return parser.parse_args()
@@ -154,11 +160,12 @@ def execute_program(tc, testcase_in, outputs_out, args: Args):
     cmd_prog = f"./hw1 {tc['n']} {testcase_in} {outputs_out}"
 
     if args.profile == "nsys":
-        report_name = args.testcase
-        if args.nodes is not None:
-            report_name += f"-N{args.nodes}"
-        if args.procs is not None:
-            report_name += f"-n{args.procs}"
+        if args.report_name is None:
+            report_name = args.testcase
+            report_name += f"-N{tc['nodes']}"
+            report_name += f"-n{tc['procs']}"
+        else:
+            report_name = args.report_name
         outputs_report = f"nsys-reports/{report_name}/report"
         os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
         cmd = f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
