@@ -22,61 +22,18 @@
 #include <mpi.h>
 #endif
 
-#ifdef TIMING
-#include <ctime>
-double get_timestamp() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec + ts.tv_nsec / 1000000000.0;
-}
-#define TIMING_START(arg) \
-    double __start_##arg = get_timestamp();
-#define TIMING_END(arg)                                              \
-    {                                                                \
-        double __end_##arg = get_timestamp();                        \
-        double __duration_##arg = __end_##arg - __start_##arg;       \
-        std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
-        std::cerr.flush();                                           \
-    }
-#define TIMING_END_1(arg, i)                                                     \
-    {                                                                            \
-        double __end_##arg = get_timestamp();                                    \
-        double __duration_##arg = __end_##arg - __start_##arg;                   \
-        std::cerr << #arg << " " << i << " took " << __duration_##arg << "s.\n"; \
-        std::cerr.flush();                                                       \
-    }
-#define TIMING_END_2(arg, i, j)                                                              \
-    {                                                                                        \
-        double __end_##arg = get_timestamp();                                                \
-        double __duration_##arg = __end_##arg - __start_##arg;                               \
-        std::cerr << #arg << " " << i << " " << j << " took " << __duration_##arg << "s.\n"; \
-        std::cerr.flush();                                                                   \
-    }
-#define TIMING_INIT(arg) double __duration_##arg = 0;
-#define TIMING_ACCUM(arg)                                \
-    {                                                    \
-        double __end_##arg = get_timestamp();            \
-        __duration_##arg += __end_##arg - __start_##arg; \
-    }
-#define TIMING_FIN(arg)                                          \
-    std::cerr << #arg << " took " << __duration_##arg << "s.\n"; \
-    std::cerr.flush();
+#ifdef PROFILING
+#include <nvtx3/nvtx3.hpp>
+#define NVTX_RANGE_START(arg) \
+    nvtxRangePushA(#arg);
+#define NVTX_RANGE_END() \
+    nvtxRangePop();
 #else
-#define TIMING_START(arg) \
+#define NVTX_RANGE_START(arg) \
     {}
-#define TIMING_END(arg) \
+#define NVTX_RANGE_END() \
     {}
-#define TIMING_END_1(arg, i) \
-    {}
-#define TIMING_END_2(arg, i, j) \
-    {}
-#define TIMING_INIT(arg) \
-    {}
-#define TIMING_ACCUM(arg) \
-    {}
-#define TIMING_FIN(arg) \
-    {}
-#endif  // TIMING
+#endif  // PROFILING
 
 const int max_num_procs = 48;
 const int max_num_cpus = 12;
@@ -184,7 +141,7 @@ int main(int argc, char** argv) {
 }
 
 int Solver::solve(int argc, char** argv) {
-    TIMING_START(all);
+    NVTX_RANGE_START(solve_all)
     std::ios::sync_with_stdio(0);
     std::cin.tie(0);
     std::cout.tie(0);
@@ -221,7 +178,6 @@ int Solver::solve(int argc, char** argv) {
     width = strtol(argv[7], 0, 10);
     height = strtol(argv[8], 0, 10);
 
-    TIMING_START(mandelbrot);
 #ifdef MPI_ENABLED
     if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
         mandelbrot();
@@ -231,14 +187,13 @@ int Solver::solve(int argc, char** argv) {
 #else
     mandelbrot();
 #endif
-    TIMING_END_1(mandelbrot, world_rank);
 
 #ifdef MPI_ENABLED
-    // TIMING_START(MPI_Finalize);
+    // NVTX_RANGE_START(MPI_Finalize)
     // MPI_Finalize();
-    // TIMING_END_1(MPI_Finalize, world_rank);
+    // NVTX_RANGE_END()
 #endif
-    TIMING_END_1(all, world_rank);
+    NVTX_RANGE_END()
     return 0;
 }
 
@@ -274,13 +229,15 @@ void Solver::mandelbrot() {
     int* buffer = (int*)malloc(width * height * sizeof(int));
 
     // compute partial mandelbrot set
+    NVTX_RANGE_START(partial_mandelbrot)
     partial_mandelbrot(pixels, width * height, buffer);
+    NVTX_RANGE_END()
 
     // draw and cleanup
     if (world_rank == 0) {
-        TIMING_START(write_png);
+        NVTX_RANGE_START(write_png)
         write_png(buffer);
-        TIMING_END_1(write_png, world_rank);
+        NVTX_RANGE_END()
     }
     free(pixels);
     free(buffer);
@@ -310,16 +267,18 @@ void Solver::mandelbrot_mpi() {
 
     // compute partial mandelbrot set
     if (pivots[world_rank + 1] - pivots[world_rank] > 0) {
+        NVTX_RANGE_START(partial_mandelbrot)
         partial_mandelbrot(pixels + pivots[world_rank], pivots[world_rank + 1] - pivots[world_rank], tmp_buffer);
+        NVTX_RANGE_END()
     }
 
     MPI_Reduce(tmp_buffer, buffer, width * height, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
     // draw and cleanup
     if (world_rank == 0) {
-        TIMING_START(write_png);
+        NVTX_RANGE_START(write_png)
         write_png(buffer);
-        TIMING_END_1(write_png, world_rank);
+        NVTX_RANGE_END()
     }
     free(pixels);
     free(tmp_buffer);
@@ -396,7 +355,7 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
     pthread_mutex_t* mutex = &shared->mutex;
 #endif
 
-    TIMING_START(thread);
+    NVTX_RANGE_START(thread)
     while (true) {
         int curr_start_pixel;
         int curr_end_pixel;
@@ -423,13 +382,7 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
         curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
         solver->partial_mandelbrot_single_thread(pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, buffer);
     }
-#if MULTITHREADED == 1
-    TIMING_END_1(thread, pthread_self());
-#elif MULTITHREADED == 2
-    if (solver->world_size == 0) {
-        TIMING_END_1(thread, omp_get_thread_num());
-    }
-#endif
+    NVTX_RANGE_END()
 }
 
 void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer) {
@@ -508,7 +461,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
 }
 
 void Solver::write_png(const int* buffer) const {
-    TIMING_START(write_png_setup);
+    NVTX_RANGE_START(write_png_setup)
     FILE* fp = fopen(filename, "wb");
     assert(fp);
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -521,21 +474,21 @@ void Solver::write_png(const int* buffer) const {
     png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
     png_write_info(png_ptr, info_ptr);
     png_set_compression_level(png_ptr, 0);
-    TIMING_END(write_png_setup);
-    TIMING_START(write_png_loop);
+    NVTX_RANGE_END()
+    NVTX_RANGE_START(write_png_loop)
     size_t row_size = 3 * width * height * sizeof(png_bytep);
     png_bytep* rows = (png_bytep*)malloc(height * sizeof(png_bytep));
     png_bytep row = (png_bytep)malloc(row_size);
     write_png_fill_rows(rows, row, buffer);
     png_write_rows(png_ptr, rows, height);
-    TIMING_END(write_png_loop);
-    TIMING_START(write_png_cleanup);
+    NVTX_RANGE_END()
+    NVTX_RANGE_START(write_png_cleanup)
     free(row);
     free(rows);
     png_write_end(png_ptr, NULL);
     png_destroy_write_struct(&png_ptr, &info_ptr);
     fclose(fp);
-    TIMING_END(write_png_cleanup);
+    NVTX_RANGE_END()
 }
 
 #if MULTITHREADED == 1

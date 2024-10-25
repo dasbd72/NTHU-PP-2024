@@ -13,8 +13,8 @@ ifeq ($(VECTORIZE_VERBOSE), 1)
 	CFLAGS += -fopt-info-vec-all
 endif
 
-ifeq ($(TIMING), 1)
-	CFLAGS += -DTIMING
+ifeq ($(PROFILING), 1)
+	CFLAGS += -DPROFILING
 endif
 
 ifeq ($(DEBUG), 1)
