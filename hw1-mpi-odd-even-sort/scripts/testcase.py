@@ -154,7 +154,12 @@ def execute_program(tc, testcase_in, outputs_out, args: Args):
     cmd_prog = f"./hw1 {tc['n']} {testcase_in} {outputs_out}"
 
     if args.profile == "nsys":
-        outputs_report = f"nsys-reports/{args.testcase}/report"
+        report_name = args.testcase
+        if args.nodes is not None:
+            report_name += f"-N{args.nodes}"
+        if args.procs is not None:
+            report_name += f"-n{args.procs}"
+        outputs_report = f"nsys-reports/{report_name}/report"
         os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
         cmd = f"{cmd_srun} ./scripts/wrapper.sh {outputs_report} {cmd_prog}"
     else:
