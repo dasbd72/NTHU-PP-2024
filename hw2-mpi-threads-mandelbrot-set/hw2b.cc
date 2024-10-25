@@ -116,6 +116,21 @@ class Solver {
     int world_rank;
     int world_size;
 
+    // Shared derived variables
+    double h_norm;
+    double w_norm;
+#if defined(__AVX512F__) && defined(SIMD_ENABLED)
+    __m256i vec_8_1_epi32 = _mm256_set1_epi32(1);
+    __m512d vec_8_2 = _mm512_set1_pd(2);
+    __m512d vec_8_4 = _mm512_set1_pd(4);
+    __m512d vec_8_width;
+    __m512d vec_8_w_norm;
+    __m512d vec_8_h_norm;
+    __m512d vec_8_left;
+    __m512d vec_8_lower;
+    __m256i vec_8_iters_epi32;
+#endif
+
     void random_choices(int* buffer, int buffer_size, int seed, int chunk_size);
     void mandelbrot();
 #ifdef MPI_ENABLED
@@ -177,6 +192,18 @@ int Solver::solve(int argc, char** argv) {
     upper = strtod(argv[6], 0);
     width = strtol(argv[7], 0, 10);
     height = strtol(argv[8], 0, 10);
+
+    // set up shared derived variables
+    h_norm = (upper - lower) / height;
+    w_norm = (right - left) / width;
+#if defined(__AVX512F__) && defined(SIMD_ENABLED)
+    vec_8_width = _mm512_set1_pd(width);
+    vec_8_w_norm = _mm512_set1_pd(w_norm);
+    vec_8_h_norm = _mm512_set1_pd(h_norm);
+    vec_8_left = _mm512_set1_pd(left);
+    vec_8_lower = _mm512_set1_pd(lower);
+    vec_8_iters_epi32 = _mm256_set1_epi32(iters);
+#endif
 
 #ifdef MPI_ENABLED
     if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
@@ -400,58 +427,119 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     boost::sort::spreadsort::spreadsort(pixels, pixels + num_pixels);
     NVTX_RANGE_END()
     // mandelbrot set
-    const double h_norm = (upper - lower) / height;
-    const double w_norm = (right - left) / width;
     int pi = 0;
 #if defined(__AVX512F__) && defined(SIMD_ENABLED)
     NVTX_RANGE_START(partial_mandelbrot_pixels_vec_8)
     // Constants
     const int vec_8_size = 8;
-    const __m256i vec_8_1_epi32 = _mm256_set1_epi32(1);
-    const __m512d vec_8_2 = _mm512_set1_pd(2);
-    const __m512d vec_8_4 = _mm512_set1_pd(4);
-    const __m512d vec_8_width = _mm512_set1_pd(width);
-    const __m512d vec_8_w_norm = _mm512_set1_pd(w_norm);
-    const __m512d vec_8_h_norm = _mm512_set1_pd(h_norm);
-    const __m512d vec_8_left = _mm512_set1_pd(left);
-    const __m512d vec_8_lower = _mm512_set1_pd(lower);
-    for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
-        // Calculate pixel coordinates
-        __m512d vec_p_offset = _mm512_cvtepi32_pd(_mm256_loadu_si256((__m256i*)&pixels[pi]));
-        __m512d vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_8_width));
-        __m512d vec_i = _mm512_floor_pd(_mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset));
+    const int mini_iters = 500;
+    // Declare variables
+    // Coordinates
+    __m256i vec_p;
+    __m512d vec_p_offset;
+    __m512d vec_j;
+    __m512d vec_i;
+    __m512d vec_y0;
+    __m512d vec_x0;
+    // Iteration variables
+    __m256i vec_repeats = _mm256_setzero_si256();
+    __m512d vec_x = _mm512_setzero_pd();
+    __m512d vec_x_sq = _mm512_setzero_pd();
+    __m512d vec_y = _mm512_setzero_pd();
+    __m512d vec_y_sq = _mm512_setzero_pd();
+    __m512d vec_length_squared = _mm512_setzero_pd();
+    // Masks
+    __mmask8 length_valid_mask;
+    __mmask8 repeats_exceed_mask;
+    __mmask8 mini_done_mask;
+    __mmask8 done_mask;
+    if (mini_iters * 10 >= iters) {
+        // Static scheduling
+        for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
+            // Calculate pixel coordinates
+            vec_p = _mm256_loadu_si256((__m256i*)&pixels[pi]);
+            vec_p_offset = _mm512_cvtepi32_pd(vec_p);
+            vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_8_width));
+            vec_i = _mm512_floor_pd(_mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset));
+            // Calculate initial values
+            vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);
+            vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);
+            // Initialize iteration variables
+            vec_repeats = _mm256_setzero_si256();
+            vec_x = _mm512_setzero_pd();
+            vec_x_sq = _mm512_setzero_pd();
+            vec_y = _mm512_setzero_pd();
+            vec_y_sq = _mm512_setzero_pd();
+            vec_length_squared = _mm512_setzero_pd();
+            // Initialize masks
+            length_valid_mask = 0xFF;
+            for (int r = 0; r < iters && length_valid_mask; r++) {
+                vec_y = _mm512_fmadd_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2, vec_y0);
+                vec_x = _mm512_add_pd(_mm512_sub_pd(vec_x_sq, vec_y_sq), vec_x0);
+                vec_y_sq = _mm512_mul_pd(vec_y, vec_y);
+                vec_x_sq = _mm512_mul_pd(vec_x, vec_x);
+                vec_length_squared = _mm512_fmadd_pd(vec_x, vec_x, vec_y_sq);
+                vec_repeats = _mm256_mask_add_epi32(vec_repeats, length_valid_mask, vec_repeats, vec_8_1_epi32);
+                length_valid_mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
+            }
 
-        // Calculate initial values
-        __m512d vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);
-        __m512d vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);
-
-        // Initialize variables
-        __m256i vec_repeats = _mm256_set1_epi32(0);
-        __m512d vec_x = _mm512_setzero_pd();
-        __m512d vec_x_sq = _mm512_setzero_pd();
-        __m512d vec_y = _mm512_setzero_pd();
-        __m512d vec_y_sq = _mm512_setzero_pd();
-        __m512d vec_length_squared = _mm512_setzero_pd();
-        int repeats = 0;
-        __mmask8 mask = 0xFF;
-        while (repeats < iters && mask) {
-            vec_y = _mm512_fmadd_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2, vec_y0);
-            vec_x = _mm512_add_pd(_mm512_sub_pd(vec_x_sq, vec_y_sq), vec_x0);
-            vec_y_sq = _mm512_mul_pd(vec_y, vec_y);
-            vec_x_sq = _mm512_mul_pd(vec_x, vec_x);
-            vec_length_squared = _mm512_fmadd_pd(vec_x, vec_x, vec_y_sq);
-            vec_repeats = _mm256_mask_add_epi32(vec_repeats, mask, vec_repeats, vec_8_1_epi32);
-            ++repeats;
-            mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
+            // Store results
+            for (int i = 0; i < vec_8_size; i++) {
+                buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);
+            }
         }
-        buffer[pixels[pi + 0]] = _mm256_extract_epi32(vec_repeats, 0);
-        buffer[pixels[pi + 1]] = _mm256_extract_epi32(vec_repeats, 1);
-        buffer[pixels[pi + 2]] = _mm256_extract_epi32(vec_repeats, 2);
-        buffer[pixels[pi + 3]] = _mm256_extract_epi32(vec_repeats, 3);
-        buffer[pixels[pi + 4]] = _mm256_extract_epi32(vec_repeats, 4);
-        buffer[pixels[pi + 5]] = _mm256_extract_epi32(vec_repeats, 5);
-        buffer[pixels[pi + 6]] = _mm256_extract_epi32(vec_repeats, 6);
-        buffer[pixels[pi + 7]] = _mm256_extract_epi32(vec_repeats, 7);
+    } else if (pi + vec_8_size - 1 < num_pixels) {
+        // Dynamic scheduling
+        // Load first 8 pixels
+        vec_p = _mm256_loadu_si256((__m256i*)&pixels[pi]);
+        pi += vec_8_size;
+        // Initialize masks
+        length_valid_mask = 0xFF;
+        mini_done_mask = 0xFF;
+        done_mask = 0x0;
+        while (done_mask != 0xFF) {
+            // Initialize values for mini iterations done entries
+            // Calculate pixel coordinates
+            vec_p_offset = _mm512_cvtepi32_pd(vec_p);
+            vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_8_width));
+            vec_i = _mm512_floor_pd(_mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset));
+            vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);
+            vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);
+            // Initialize iteration variables
+            vec_repeats = _mm256_mask_mov_epi32(vec_repeats, mini_done_mask, _mm256_setzero_si256());
+            vec_x = _mm512_mask_mov_pd(vec_x, mini_done_mask, _mm512_setzero_pd());
+            vec_x_sq = _mm512_mask_mov_pd(vec_x_sq, mini_done_mask, _mm512_setzero_pd());
+            vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, _mm512_setzero_pd());
+            vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, _mm512_setzero_pd());
+            vec_length_squared = _mm512_mask_mov_pd(vec_length_squared, mini_done_mask, _mm512_setzero_pd());
+            // Initialize masks
+            length_valid_mask |= mini_done_mask;
+            for (int r = 0; r < mini_iters && length_valid_mask; r++) {
+                vec_y = _mm512_fmadd_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2, vec_y0);
+                vec_x = _mm512_add_pd(_mm512_sub_pd(vec_x_sq, vec_y_sq), vec_x0);
+                vec_y_sq = _mm512_mul_pd(vec_y, vec_y);
+                vec_x_sq = _mm512_mul_pd(vec_x, vec_x);
+                vec_length_squared = _mm512_fmadd_pd(vec_x, vec_x, vec_y_sq);
+                vec_repeats = _mm256_mask_add_epi32(vec_repeats, length_valid_mask, vec_repeats, vec_8_1_epi32);
+                length_valid_mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
+            }
+            // Clamp repeats to iters
+            repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
+            vec_repeats = _mm256_mask_mov_epi32(vec_repeats, repeats_exceed_mask, vec_8_iters_epi32);
+            mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
+
+            // Store results
+            for (int i = 0; i < vec_8_size; i++) {
+                if (mini_done_mask & (1 << i)) {
+                    buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);
+                    if (pi < num_pixels) {
+                        vec_p = _mm256_insert_epi32(vec_p, pixels[pi++], i);
+                    } else {
+                        done_mask |= 1 << i;
+                    }
+                }
+            }
+        }
     }
     NVTX_RANGE_END()
 #endif
