@@ -484,9 +484,16 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             }
 
             // Store results
-            for (int i = 0; i < vec_8_size; i++) {
-                buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);
-            }
+#define STATIC_STORE_RESULTS(i) \
+    buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);
+            STATIC_STORE_RESULTS(0)
+            STATIC_STORE_RESULTS(1)
+            STATIC_STORE_RESULTS(2)
+            STATIC_STORE_RESULTS(3)
+            STATIC_STORE_RESULTS(4)
+            STATIC_STORE_RESULTS(5)
+            STATIC_STORE_RESULTS(6)
+            STATIC_STORE_RESULTS(7)
         }
     } else if (pi + vec_8_size - 1 < num_pixels) {
         // Dynamic scheduling
@@ -529,16 +536,23 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
 
             // Store results
-            for (int i = 0; i < vec_8_size; i++) {
-                if (mini_done_mask & (1 << i)) {
-                    buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);
-                    if (pi < num_pixels) {
-                        vec_p = _mm256_insert_epi32(vec_p, pixels[pi++], i);
-                    } else {
-                        done_mask |= 1 << i;
-                    }
-                }
-            }
+#define DYNAMIC_STORE_RESULTS(i)                                                       \
+    if (mini_done_mask & (1 << i)) {                                                   \
+        buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i); \
+        if (pi < num_pixels) {                                                         \
+            vec_p = _mm256_insert_epi32(vec_p, pixels[pi++], i);                       \
+        } else {                                                                       \
+            done_mask |= 1 << i;                                                       \
+        }                                                                              \
+    }
+            DYNAMIC_STORE_RESULTS(0)
+            DYNAMIC_STORE_RESULTS(1)
+            DYNAMIC_STORE_RESULTS(2)
+            DYNAMIC_STORE_RESULTS(3)
+            DYNAMIC_STORE_RESULTS(4)
+            DYNAMIC_STORE_RESULTS(5)
+            DYNAMIC_STORE_RESULTS(6)
+            DYNAMIC_STORE_RESULTS(7)
         }
     }
     NVTX_RANGE_END()
