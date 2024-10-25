@@ -365,6 +365,7 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
     while (true) {
         int curr_start_pixel;
         int curr_end_pixel;
+        NVTX_RANGE_START(thread_critical)
 #if MULTITHREADED == 2
 #pragma omp critical
 #endif
@@ -382,22 +383,28 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
             pthread_mutex_unlock(mutex);
 #endif
         }
+        NVTX_RANGE_END()
         if (curr_start_pixel >= end_pixel) {
             break;
         }
         curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
+        NVTX_RANGE_START(partial_mandelbrot)
         solver->partial_mandelbrot_single_thread(pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, buffer);
+        NVTX_RANGE_END()
     }
     NVTX_RANGE_END()
 }
 
 void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer) {
+    NVTX_RANGE_START(partial_mandelbrot_sort)
     boost::sort::spreadsort::spreadsort(pixels, pixels + num_pixels);
+    NVTX_RANGE_END()
     // mandelbrot set
     const double h_norm = (upper - lower) / height;
     const double w_norm = (right - left) / width;
     int pi = 0;
 #if defined(__AVX512F__) && defined(SIMD_ENABLED)
+    NVTX_RANGE_START(partial_mandelbrot_pixels_vec_8)
     // Constants
     const int vec_8_size = 8;
     const __m256i vec_8_1_epi32 = _mm256_set1_epi32(1);
@@ -437,11 +444,18 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             ++repeats;
             mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);
         }
-        for (int i = 0; i < vec_8_size; i++) {
-            buffer[pixels[pi + i]] = _mm256_extract_epi32(vec_repeats, i);
-        }
+        buffer[pixels[pi + 0]] = _mm256_extract_epi32(vec_repeats, 0);
+        buffer[pixels[pi + 1]] = _mm256_extract_epi32(vec_repeats, 1);
+        buffer[pixels[pi + 2]] = _mm256_extract_epi32(vec_repeats, 2);
+        buffer[pixels[pi + 3]] = _mm256_extract_epi32(vec_repeats, 3);
+        buffer[pixels[pi + 4]] = _mm256_extract_epi32(vec_repeats, 4);
+        buffer[pixels[pi + 5]] = _mm256_extract_epi32(vec_repeats, 5);
+        buffer[pixels[pi + 6]] = _mm256_extract_epi32(vec_repeats, 6);
+        buffer[pixels[pi + 7]] = _mm256_extract_epi32(vec_repeats, 7);
     }
+    NVTX_RANGE_END()
 #endif
+    NVTX_RANGE_START(partial_mandelbrot_pixels)
     for (; pi < num_pixels; ++pi) {
         int j = pixels[pi] / width;
         int i = pixels[pi] % width;
@@ -464,6 +478,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
         }
         buffer[pixels[pi]] = repeats;
     }
+    NVTX_RANGE_END()
 }
 
 void Solver::write_png(const int* buffer) const {
