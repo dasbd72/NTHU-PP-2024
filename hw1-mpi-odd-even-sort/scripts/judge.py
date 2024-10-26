@@ -25,11 +25,6 @@ def copy_move():
 
 def judge_loop():
     while True:
-        code = build()
-        if code != 0:
-            print("Build failed")
-            time.sleep(1)
-            continue
         os.system("hw1-judge")
         time.sleep(301)
 
@@ -37,4 +32,7 @@ def judge_loop():
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_int)
     copy_move()
+    code = build()
+    if code != 0:
+        raise RuntimeError("Build failed")
     judge_loop()
