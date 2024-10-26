@@ -326,7 +326,7 @@ void Solver::mandelbrot_mpi() {
 void Solver::partial_mandelbrot(int* pixels, int num_pixels, int* buffer) {
     const int num_threads = num_cpus;
 #if MULTITHREADED == 1 || MULTITHREADED == 2
-    const int batch_size = std::min(1000, (int)std::ceil((double)width * height / num_threads));
+    const int batch_size = std::min(width * height >= 10000000 ? 2048 : 512, (int)std::ceil((double)width * height / num_threads));
 #endif
 
     // Set up shared data
@@ -405,10 +405,6 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
             pthread_mutex_lock(mutex);
 #endif
             curr_start_pixel = shared->shared_pixel;
-            if (batch_size > 8 && end_pixel - curr_start_pixel <= 100 * num_threads * 1000) {
-                shared->batch_size = 8;
-                batch_size = shared->batch_size;
-            }
             shared->shared_pixel += batch_size;
 #if MULTITHREADED == 1
             pthread_mutex_unlock(mutex);
