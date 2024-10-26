@@ -453,11 +453,11 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     __mmask8 repeats_exceed_mask;
     __mmask8 mini_done_mask;
     __mmask8 done_mask;
-#define PIXEL_COORDINATES()                                                      \
-    vec_p_offset = _mm512_cvtepi32_pd(vec_p);                                    \
-    vec_j = _mm512_floor_pd(_mm512_mul_pd(vec_p_offset, vec_8_inv_width));       \
-    vec_i = _mm512_floor_pd(_mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset)); \
-    vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);                  \
+#define PIXEL_COORDINATES()                                                \
+    vec_p_offset = _mm512_cvtepi32_pd(vec_p);                              \
+    vec_j = _mm512_floor_pd(_mm512_mul_pd(vec_p_offset, vec_8_inv_width)); \
+    vec_i = _mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset);            \
+    vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);            \
     vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);  // PIXEL_COORDINATES
 #define INNER_LOOP_COMPUTATION()                                                                     \
     vec_x_y = _mm512_mul_pd(vec_x, vec_y);                                                           \
