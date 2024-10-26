@@ -447,7 +447,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     __m512d vec_x_sq = _mm512_setzero_pd();
     __m512d vec_y = _mm512_setzero_pd();
     __m512d vec_y_sq = _mm512_setzero_pd();
-    __m512d vec_length_squared = _mm512_setzero_pd();
+    __m512d vec_x_y, vec_length_squared;
     // Masks
     __mmask8 length_valid_mask;
     __mmask8 repeats_exceed_mask;
@@ -460,7 +460,8 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);                  \
     vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);  // PIXEL_COORDINATES
 #define INNER_LOOP_COMPUTATION()                                                                     \
-    vec_y = _mm512_fmadd_pd(_mm512_mul_pd(vec_x, vec_y), vec_8_2, vec_y0);                           \
+    vec_x_y = _mm512_mul_pd(vec_x, vec_y);                                                           \
+    vec_y = _mm512_fmadd_pd(vec_x_y, vec_8_2, vec_y0);                                               \
     vec_x = _mm512_add_pd(_mm512_sub_pd(vec_x_sq, vec_y_sq), vec_x0);                                \
     vec_y_sq = _mm512_mul_pd(vec_y, vec_y);                                                          \
     vec_x_sq = _mm512_mul_pd(vec_x, vec_x);                                                          \
@@ -479,7 +480,6 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             vec_x_sq = _mm512_setzero_pd();
             vec_y = _mm512_setzero_pd();
             vec_y_sq = _mm512_setzero_pd();
-            vec_length_squared = _mm512_setzero_pd();
             // Initialize masks
             length_valid_mask = 0xFF;
             for (int r = 0; r < iters && length_valid_mask; r++) {
@@ -517,7 +517,6 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             vec_x_sq = _mm512_mask_mov_pd(vec_x_sq, mini_done_mask, _mm512_setzero_pd());
             vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, _mm512_setzero_pd());
             vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, _mm512_setzero_pd());
-            vec_length_squared = _mm512_mask_mov_pd(vec_length_squared, mini_done_mask, _mm512_setzero_pd());
             // Initialize masks
             length_valid_mask |= mini_done_mask;
             for (int r = 0; r < mini_iters && length_valid_mask; r++) {
@@ -557,12 +556,12 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
         double y0 = j * h_norm + lower;
         double x0 = i * w_norm + left;
 
-        int repeats = 0;
-        double x = 0;
-        double x_sq = 0;
-        double y = 0;
-        double y_sq = 0;
-        double length_squared = 0;
+        int repeats = 1;
+        double x = x0;
+        double y = y0;
+        double x_sq = x * x;
+        double y_sq = y * y;
+        double length_squared = x_sq + y_sq;
         while (repeats < iters && length_squared < 4) {
             y = 2 * x * y + y0;
             x = x_sq - y_sq + x0;
