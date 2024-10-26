@@ -120,10 +120,13 @@ class Solver {
     double h_norm;
     double w_norm;
 #if defined(__AVX512F__) && defined(SIMD_ENABLED)
+    __m256i vec_8_0_epi32 = _mm256_setzero_si256();
+    __m512d vec_8_0 = _mm512_setzero_pd();
     __m256i vec_8_1_epi32 = _mm256_set1_epi32(1);
     __m512d vec_8_2 = _mm512_set1_pd(2);
     __m512d vec_8_4 = _mm512_set1_pd(4);
     __m512d vec_8_width;
+    __m512d vec_8_inv_width;
     __m512d vec_8_w_norm;
     __m512d vec_8_h_norm;
     __m512d vec_8_left;
@@ -198,6 +201,7 @@ int Solver::solve(int argc, char** argv) {
     w_norm = (right - left) / width;
 #if defined(__AVX512F__) && defined(SIMD_ENABLED)
     vec_8_width = _mm512_set1_pd(width);
+    vec_8_inv_width = _mm512_set1_pd(1.0 / width);
     vec_8_w_norm = _mm512_set1_pd(w_norm);
     vec_8_h_norm = _mm512_set1_pd(h_norm);
     vec_8_left = _mm512_set1_pd(left);
@@ -442,11 +446,11 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     __m512d vec_y0;
     __m512d vec_x0;
     // Iteration variables
-    __m256i vec_repeats = _mm256_setzero_si256();
-    __m512d vec_x = _mm512_setzero_pd();
-    __m512d vec_x_sq = _mm512_setzero_pd();
-    __m512d vec_y = _mm512_setzero_pd();
-    __m512d vec_y_sq = _mm512_setzero_pd();
+    __m256i vec_repeats = vec_8_0_epi32;
+    __m512d vec_x = vec_8_0;
+    __m512d vec_x_sq = vec_8_0;
+    __m512d vec_y = vec_8_0;
+    __m512d vec_y_sq = vec_8_0;
     __m512d vec_x_y, vec_length_squared;
     // Masks
     __mmask8 length_valid_mask;
@@ -455,7 +459,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     __mmask8 done_mask;
 #define PIXEL_COORDINATES()                                                      \
     vec_p_offset = _mm512_cvtepi32_pd(vec_p);                                    \
-    vec_j = _mm512_floor_pd(_mm512_div_pd(vec_p_offset, vec_8_width));           \
+    vec_j = _mm512_floor_pd(_mm512_mul_pd(vec_p_offset, vec_8_inv_width));       \
     vec_i = _mm512_floor_pd(_mm512_fnmadd_pd(vec_8_width, vec_j, vec_p_offset)); \
     vec_y0 = _mm512_fmadd_pd(vec_j, vec_8_h_norm, vec_8_lower);                  \
     vec_x0 = _mm512_fmadd_pd(vec_i, vec_8_w_norm, vec_8_left);  // PIXEL_COORDINATES
@@ -475,11 +479,11 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             // Calculate pixel coordinates
             PIXEL_COORDINATES()
             // Initialize iteration variables
-            vec_repeats = _mm256_setzero_si256();
-            vec_x = _mm512_setzero_pd();
-            vec_x_sq = _mm512_setzero_pd();
-            vec_y = _mm512_setzero_pd();
-            vec_y_sq = _mm512_setzero_pd();
+            vec_repeats = vec_8_0_epi32;
+            vec_x = vec_8_0;
+            vec_x_sq = vec_8_0;
+            vec_y = vec_8_0;
+            vec_y_sq = vec_8_0;
             // Initialize masks
             length_valid_mask = 0xFF;
             for (int r = 0; r < iters && length_valid_mask; r++) {
@@ -512,11 +516,11 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             // Calculate pixel coordinates
             PIXEL_COORDINATES()
             // Initialize iteration variables
-            vec_repeats = _mm256_mask_mov_epi32(vec_repeats, mini_done_mask, _mm256_setzero_si256());
-            vec_x = _mm512_mask_mov_pd(vec_x, mini_done_mask, _mm512_setzero_pd());
-            vec_x_sq = _mm512_mask_mov_pd(vec_x_sq, mini_done_mask, _mm512_setzero_pd());
-            vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, _mm512_setzero_pd());
-            vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, _mm512_setzero_pd());
+            vec_repeats = _mm256_mask_mov_epi32(vec_repeats, mini_done_mask, vec_8_0_epi32);
+            vec_x = _mm512_mask_mov_pd(vec_x, mini_done_mask, vec_8_0);
+            vec_x_sq = _mm512_mask_mov_pd(vec_x_sq, mini_done_mask, vec_8_0);
+            vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, vec_8_0);
+            vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, vec_8_0);
             // Initialize masks
             length_valid_mask |= mini_done_mask;
             for (int r = 0; r < mini_iters && length_valid_mask; r++) {
