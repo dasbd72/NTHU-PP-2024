@@ -415,7 +415,7 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
             break;
         }
         curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
-        NVTX_RANGE_START(partial_mandelbrot)
+        NVTX_RANGE_START(partial_mandelbrot_single_thread)
         solver->partial_mandelbrot_single_thread(pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, buffer);
         NVTX_RANGE_END()
     }
