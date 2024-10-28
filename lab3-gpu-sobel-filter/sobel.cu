@@ -20,6 +20,19 @@
 
 #define CLAMP_8BIT(x) (x > 255.0 ? 255 : x)
 
+#ifdef PROFILING
+#include <nvtx3/nvtx3.hpp>
+#define NVTX_RANGE_START(arg) \
+    nvtxRangePushA(#arg);
+#define NVTX_RANGE_END() \
+    nvtxRangePop();
+#else
+#define NVTX_RANGE_START(arg) \
+    {}
+#define NVTX_RANGE_END() \
+    {}
+#endif  // PROFILING
+
 __constant__ short mask[MASK_N][MASK_X][MASK_Y] = {
     {{-1, -4, -6, -4, -1},
      {-2, -8, -12, -8, -2},
@@ -123,6 +136,7 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
 }
 
 int main(int argc, char** argv) {
+    NVTX_RANGE_START(main);
     assert(argc == 3);
     char* input_filename = argv[1];
     char* output_filename = argv[2];
@@ -135,8 +149,11 @@ int main(int argc, char** argv) {
     unsigned char* dev_t = NULL;
     dim3 blk, grid;
 
+    NVTX_RANGE_START(read_png);
     read_png(input_filename, &host_s, &height, &width, &channels, &height_pad, &width_pad);
+    NVTX_RANGE_END();
 
+    NVTX_RANGE_START(allocate);
     blk = dim3(BLOCK_X, BLOCK_Y);
     grid = dim3(width_pad / BLOCK_X, height_pad / BLOCK_Y);
     size = channels * (width_pad + MASK_ADJ_X) * (height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
@@ -144,17 +161,25 @@ int main(int argc, char** argv) {
     cudaMalloc(&dev_s, size);
     cudaMalloc(&dev_t, size);
     cudaMemset(dev_t, 0, size);
+    NVTX_RANGE_END();
 
-    cudaMemcpy(dev_s, host_s, size, cudaMemcpyHostToDevice);
+    NVTX_RANGE_START(sobel_kernel);
+    cudaMemcpyAsync(dev_s, host_s, size, cudaMemcpyHostToDevice);
     sobel<<<grid, blk>>>(dev_s, dev_t, height, width, channels, height_pad, width_pad);
     cudaMemcpyAsync(host_t, dev_t, size, cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
+    NVTX_RANGE_END();
 
+    NVTX_RANGE_START(write_png);
     write_png(output_filename, host_t, height, width, channels, height_pad, width_pad);
+    NVTX_RANGE_END();
 
+    NVTX_RANGE_START(free);
     free(host_s);
     free(host_t);
     cudaFree(dev_s);
     cudaFree(dev_t);
+    NVTX_RANGE_END();
+    NVTX_RANGE_END();
     return 0;
 }
