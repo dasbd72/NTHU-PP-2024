@@ -86,44 +86,40 @@ void write_png(const char* filename, png_bytep image, const unsigned height, con
 
 __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned channels, unsigned height_pad, unsigned width_pad) {
     int x, y, i, v, u;
-    short R, G, B;
-    float val[MASK_N * 3] = {0.0};
-    float totalR, totalG, totalB;
+    short color[3];
+    float val[3], total[3] = {0.0};
 
-    x = blockIdx.x * blockDim.x + threadIdx.x + START_X;
-    y = blockIdx.y * blockDim.y + threadIdx.y + START_Y;
-    totalR = 0.0;
-    totalG = 0.0;
-    totalB = 0.0;
+    x = blockIdx.x * blockDim.x + threadIdx.x;
+    y = blockIdx.y * blockDim.y + threadIdx.y;
 #pragma unroll 2
     for (i = 0; i < MASK_N; ++i) {
-        val[i * 3 + 2] = 0.0;
-        val[i * 3 + 1] = 0.0;
-        val[i * 3] = 0.0;
+        val[2] = 0.0;
+        val[1] = 0.0;
+        val[0] = 0.0;
 
 #pragma unroll 5
-        for (v = -START_Y; v < START_Y + ADJUST_Y; ++v) {
+        for (v = 0; v < MASK_Y; ++v) {
 #pragma unroll 5
-            for (u = -START_X; u < START_X + ADJUST_X; ++u) {
-                R = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
-                G = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
-                B = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
-                val[i * 3 + 2] += R * mask[i][u + START_X][v + START_Y];
-                val[i * 3 + 1] += G * mask[i][u + START_X][v + START_Y];
-                val[i * 3 + 0] += B * mask[i][u + START_X][v + START_Y];
+            for (u = 0; u < MASK_X; ++u) {
+                color[2] = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
+                color[1] = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
+                color[0] = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
+                val[2] += color[2] * mask[i][u][v];
+                val[1] += color[1] * mask[i][u][v];
+                val[0] += color[0] * mask[i][u][v];
             }
         }
 
-        totalR += val[i * 3 + 2] * val[i * 3 + 2];
-        totalG += val[i * 3 + 1] * val[i * 3 + 1];
-        totalB += val[i * 3 + 0] * val[i * 3 + 0];
+        total[2] += val[2] * val[2];
+        total[1] += val[1] * val[1];
+        total[0] += val[0] * val[0];
     }
-    totalR = sqrtf(totalR) / SCALE;
-    totalG = sqrtf(totalG) / SCALE;
-    totalB = sqrtf(totalB) / SCALE;
-    t[channels * ((width_pad + MASK_ADJ_X) * y + x) + 2] = CLAMP_8BIT(totalR);
-    t[channels * ((width_pad + MASK_ADJ_X) * y + x) + 1] = CLAMP_8BIT(totalG);
-    t[channels * ((width_pad + MASK_ADJ_X) * y + x) + 0] = CLAMP_8BIT(totalB);
+    total[2] = sqrtf(total[2]) / SCALE;
+    total[1] = sqrtf(total[1]) / SCALE;
+    total[0] = sqrtf(total[0]) / SCALE;
+    t[channels * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_8BIT(total[2]);
+    t[channels * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_8BIT(total[1]);
+    t[channels * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_8BIT(total[0]);
 }
 
 int main(int argc, char** argv) {
