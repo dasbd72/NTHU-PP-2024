@@ -87,8 +87,8 @@ void write_png(const char* filename, png_bytep image, const unsigned height, con
 __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned channels, unsigned height_pad, unsigned width_pad) {
     int x, y, i, v, u;
     short R, G, B;
-    double val[MASK_N * 3] = {0.0};
-    double totalR, totalG, totalB;
+    float val[MASK_N * 3] = {0.0};
+    float totalR, totalG, totalB;
 
     x = blockIdx.x * blockDim.x + threadIdx.x + START_X;
     y = blockIdx.y * blockDim.y + threadIdx.y + START_Y;
@@ -121,9 +121,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
         totalG += val[i * 3 + 1] * val[i * 3 + 1];
         totalB += val[i * 3 + 0] * val[i * 3 + 0];
     }
-    totalR = sqrt(totalR) / SCALE;
-    totalG = sqrt(totalG) / SCALE;
-    totalB = sqrt(totalB) / SCALE;
+    totalR = sqrtf(totalR) / SCALE;
+    totalG = sqrtf(totalG) / SCALE;
+    totalB = sqrtf(totalB) / SCALE;
     t[channels * ((width_pad + MASK_ADJ_X) * y + x) + 2] = CLAMP_8BIT(totalR);
     t[channels * ((width_pad + MASK_ADJ_X) * y + x) + 1] = CLAMP_8BIT(totalG);
     t[channels * ((width_pad + MASK_ADJ_X) * y + x) + 0] = CLAMP_8BIT(totalB);
