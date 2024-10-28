@@ -24,55 +24,37 @@ int mask[MASK_N][MASK_X][MASK_Y] = {
      {-4, -8, 0, 8, 4},
      {-1, -2, 0, 2, 1}}};
 
-int read_png(const char* filename, unsigned char** image, unsigned* height,
-             unsigned* width, unsigned* channels) {
+void read_png(const char* filename, unsigned char** image, unsigned* height, unsigned* width, unsigned* channels) {
     unsigned char sig[8];
-    FILE* infile;
-    infile = fopen(filename, "rb");
-
-    fread(sig, 1, 8, infile);
-    if (!png_check_sig(sig, 8))
-        return 1; /* bad signature */
-
-    png_structp png_ptr;
-    png_infop info_ptr;
-
-    png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png_ptr)
-        return 4; /* out of memory */
-
-    info_ptr = png_create_info_struct(png_ptr);
-    if (!info_ptr) {
-        png_destroy_read_struct(&png_ptr, NULL, NULL);
-        return 4; /* out of memory */
-    }
-
-    png_init_io(png_ptr, infile);
+    FILE* fp = fopen(filename, "rb");
+    fread(sig, 1, 8, fp);
+    assert(png_check_sig(sig, 8));
+    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    assert(png_ptr);
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    assert(info_ptr);
+    png_init_io(png_ptr, fp);
     png_set_sig_bytes(png_ptr, 8);
     png_read_info(png_ptr, info_ptr);
     int bit_depth, color_type;
     png_get_IHDR(png_ptr, info_ptr, width, height, &bit_depth, &color_type, NULL, NULL, NULL);
-
     png_uint_32 i, rowbytes;
     png_bytep row_pointers[*height];
     png_read_update_info(png_ptr, info_ptr);
     rowbytes = png_get_rowbytes(png_ptr, info_ptr);
     *channels = (int)png_get_channels(png_ptr, info_ptr);
-
-    if ((*image = (unsigned char*)malloc(rowbytes * *height)) == NULL) {
-        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
-        return 3;
-    }
-
-    for (i = 0; i < *height; ++i)
+    *image = (unsigned char*)malloc(rowbytes * *height);
+    assert(*image);
+    for (i = 0; i < *height; ++i) {
         row_pointers[i] = *image + i * rowbytes;
+    }
     png_read_image(png_ptr, row_pointers);
     png_read_end(png_ptr, NULL);
-    return 0;
+    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+    fclose(fp);
 }
 
-void write_png(const char* filename, png_bytep image, const unsigned height, const unsigned width,
-               const unsigned channels) {
+void write_png(const char* filename, png_bytep image, const unsigned height, const unsigned width, const unsigned channels) {
     FILE* fp = fopen(filename, "wb");
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
