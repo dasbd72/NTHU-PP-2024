@@ -45,7 +45,7 @@ __constant__ short mask[MASK_N][MASK_X][MASK_Y] = {
      {-4, -8, 0, 8, 4},
      {-1, -2, 0, 2, 1}}};
 
-void read_png(const char* filename, unsigned char** image, unsigned* height, unsigned* width, unsigned* channels, unsigned* height_pad, unsigned* width_pad) {
+void read_png(const char* filename, unsigned char** image, unsigned* height, unsigned* width, unsigned* height_pad, unsigned* width_pad) {
     unsigned char sig[8];
     FILE* fp = fopen(filename, "rb");
     fread(sig, 1, 8, fp);
@@ -61,14 +61,15 @@ void read_png(const char* filename, unsigned char** image, unsigned* height, uns
     png_get_IHDR(png_ptr, info_ptr, width, height, &bit_depth, &color_type, NULL, NULL, NULL);
     png_bytep row_pointers[*height];
     png_read_update_info(png_ptr, info_ptr);
-    *channels = (int)png_get_channels(png_ptr, info_ptr);
+    unsigned channels = (int)png_get_channels(png_ptr, info_ptr);
+    assert(channels == 3);
     *height_pad = (*height % BLOCK_Y == 0) ? *height : (*height / BLOCK_Y + 1) * BLOCK_Y;
     *width_pad = (*width % BLOCK_X == 0) ? *width : (*width / BLOCK_X + 1) * BLOCK_X;
-    size_t size = *channels * (*width_pad + MASK_ADJ_X) * (*height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
+    size_t size = 3 * (*width_pad + MASK_ADJ_X) * (*height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
     *image = (unsigned char*)malloc(size);
     assert(*image);
     for (png_uint_32 i = 0; i < *height; ++i) {
-        row_pointers[i] = *image + (i + START_Y) * *channels * (*width_pad + MASK_ADJ_X) + START_X * *channels;
+        row_pointers[i] = *image + (i + START_Y) * 3 * (*width_pad + MASK_ADJ_X) + START_X * 3;
     }
     png_read_image(png_ptr, row_pointers);
     png_read_end(png_ptr, NULL);
@@ -76,7 +77,7 @@ void read_png(const char* filename, unsigned char** image, unsigned* height, uns
     fclose(fp);
 }
 
-void write_png(const char* filename, png_bytep image, const unsigned height, const unsigned width, const unsigned channels, const unsigned height_pad, const unsigned width_pad) {
+void write_png(const char* filename, png_bytep image, const unsigned height, const unsigned width, const unsigned height_pad, const unsigned width_pad) {
     FILE* fp = fopen(filename, "wb");
     png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     png_infop info_ptr = png_create_info_struct(png_ptr);
@@ -89,7 +90,7 @@ void write_png(const char* filename, png_bytep image, const unsigned height, con
     png_set_compression_level(png_ptr, 0);
     png_bytep row_ptr[height];
     for (int i = 0; i < height; ++i) {
-        row_ptr[i] = image + (i + START_Y) * channels * (width_pad + MASK_ADJ_X) * sizeof(unsigned char) + START_X * channels;
+        row_ptr[i] = image + (i + START_Y) * 3 * (width_pad + MASK_ADJ_X) * sizeof(unsigned char) + START_X * 3;
     }
     png_write_image(png_ptr, row_ptr);
     png_write_end(png_ptr, NULL);
@@ -97,7 +98,7 @@ void write_png(const char* filename, png_bytep image, const unsigned height, con
     fclose(fp);
 }
 
-__global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned channels, unsigned height_pad, unsigned width_pad) {
+__global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned height_pad, unsigned width_pad) {
     int x, y, i, v, u;
     short color[3];
     float val[3], total[3] = {0.0};
@@ -114,9 +115,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
         for (v = 0; v < MASK_Y; ++v) {
 #pragma unroll 5
             for (u = 0; u < MASK_X; ++u) {
-                color[2] = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
-                color[1] = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
-                color[0] = s[channels * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
+                color[2] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
+                color[1] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
+                color[0] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
                 val[2] += color[2] * mask[i][u][v];
                 val[1] += color[1] * mask[i][u][v];
                 val[0] += color[0] * mask[i][u][v];
@@ -130,9 +131,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     total[2] = sqrtf(total[2]) / SCALE;
     total[1] = sqrtf(total[1]) / SCALE;
     total[0] = sqrtf(total[0]) / SCALE;
-    t[channels * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_8BIT(total[2]);
-    t[channels * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_8BIT(total[1]);
-    t[channels * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_8BIT(total[0]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_8BIT(total[2]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_8BIT(total[1]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_8BIT(total[0]);
 }
 
 int main(int argc, char** argv) {
@@ -142,7 +143,7 @@ int main(int argc, char** argv) {
     char* output_filename = argv[2];
 
     size_t size;
-    unsigned height, width, channels, height_pad, width_pad;
+    unsigned height, width, height_pad, width_pad;
     unsigned char* host_s = NULL;
     unsigned char* host_t = NULL;
     unsigned char* dev_s = NULL;
@@ -150,13 +151,13 @@ int main(int argc, char** argv) {
     dim3 blk, grid;
 
     NVTX_RANGE_START(read_png);
-    read_png(input_filename, &host_s, &height, &width, &channels, &height_pad, &width_pad);
+    read_png(input_filename, &host_s, &height, &width, &height_pad, &width_pad);
     NVTX_RANGE_END();
 
     NVTX_RANGE_START(allocate);
     blk = dim3(BLOCK_X, BLOCK_Y);
     grid = dim3(width_pad / BLOCK_X, height_pad / BLOCK_Y);
-    size = channels * (width_pad + MASK_ADJ_X) * (height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
+    size = 3 * (width_pad + MASK_ADJ_X) * (height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
     host_t = (unsigned char*)malloc(size);
     cudaMalloc(&dev_s, size);
     cudaMalloc(&dev_t, size);
@@ -165,13 +166,13 @@ int main(int argc, char** argv) {
 
     NVTX_RANGE_START(sobel_kernel);
     cudaMemcpyAsync(dev_s, host_s, size, cudaMemcpyHostToDevice);
-    sobel<<<grid, blk>>>(dev_s, dev_t, height, width, channels, height_pad, width_pad);
+    sobel<<<grid, blk>>>(dev_s, dev_t, height, width, height_pad, width_pad);
     cudaMemcpyAsync(host_t, dev_t, size, cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
     NVTX_RANGE_END();
 
     NVTX_RANGE_START(write_png);
-    write_png(output_filename, host_t, height, width, channels, height_pad, width_pad);
+    write_png(output_filename, host_t, height, width, height_pad, width_pad);
     NVTX_RANGE_END();
 
     NVTX_RANGE_START(free);
