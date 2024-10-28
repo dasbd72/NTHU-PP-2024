@@ -1,0 +1,6 @@
+module use --append /opt/modulefiles
+module use --append /opt/intel/oneapi/modulefiles
+module use --append /usr/share/modules/modulefiles
+module load cuda
+module load rocm
+
