@@ -1,6 +1,10 @@
 NVCC = nvcc 
 NVCCFLAGS = -O3 -std=c++11 -Xptxas=-v -arch=sm_61
 
+ifeq ($(PROFILING), 1)
+	NVCCFLAGS += -DPROFILING
+endif
+
 HIPCC = hipcc
 HIPCCFLAGS  = -O3 -std=c++11 --offload-arch=gfx90a
 

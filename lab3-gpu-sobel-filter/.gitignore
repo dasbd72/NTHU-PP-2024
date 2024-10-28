@@ -222,7 +222,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
+env/*
+!env/env.template.sh
 venv/
 ENV/
 env.bak/
@@ -294,3 +295,5 @@ pyrightconfig.json
 testcases
 /sobel
 /sobel-amd
+nsys-reports
+vtune-reports
