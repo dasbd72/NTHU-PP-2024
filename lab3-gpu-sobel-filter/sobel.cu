@@ -229,10 +229,10 @@ int main(int argc, char** argv) {
 
     NVTX_RANGE_START(allocate);
     host_s = (unsigned char*)malloc(size);
+    memset(host_s, 0, size);
     host_t = (unsigned char*)malloc(size);
     cudaMalloc(&dev_s, size);
     cudaMalloc(&dev_t, size);
-    cudaMemset(dev_t, 0, size);
     NVTX_RANGE_END();
 
     read_png_rows(&read_data, host_s, 0, height);
