@@ -92,6 +92,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
 
     x = blockIdx.x * blockDim.x + threadIdx.x + START_X;
     y = blockIdx.y * blockDim.y + threadIdx.y + START_Y;
+    totalR = 0.0;
+    totalG = 0.0;
+    totalB = 0.0;
 #pragma unroll 2
     for (i = 0; i < MASK_N; ++i) {
         val[i * 3 + 2] = 0.0;
@@ -110,13 +113,7 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
                 val[i * 3 + 0] += B * mask[i][u + START_X][v + START_Y];
             }
         }
-    }
 
-    totalR = 0.0;
-    totalG = 0.0;
-    totalB = 0.0;
-#pragma unroll 2
-    for (i = 0; i < MASK_N; ++i) {
         totalR += val[i * 3 + 2] * val[i * 3 + 2];
         totalG += val[i * 3 + 1] * val[i * 3 + 1];
         totalB += val[i * 3 + 0] * val[i * 3 + 0];
