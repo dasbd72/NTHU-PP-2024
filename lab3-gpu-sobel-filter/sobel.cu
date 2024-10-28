@@ -45,57 +45,118 @@ __constant__ short mask[MASK_N][MASK_X][MASK_Y] = {
      {-4, -8, 0, 8, 4},
      {-1, -2, 0, 2, 1}}};
 
-void read_png(const char* filename, unsigned char** image, unsigned* height, unsigned* width, unsigned* height_pad, unsigned* width_pad) {
+typedef struct read_png_t {
+    // Input
+    const char* filename;
+    // Output
+    size_t size;
+    unsigned height;
+    unsigned width;
+    unsigned height_pad;
+    unsigned width_pad;
+    // Internal
+    FILE* fp;
+    png_structp png_ptr;
+    png_infop info_ptr;
+} read_png_t;
+
+typedef struct write_png_t {
+    // Input
+    const char* filename;
+    size_t size;
+    unsigned height;
+    unsigned width;
+    unsigned height_pad;
+    unsigned width_pad;
+    // Internal
+    FILE* fp;
+    png_structp png_ptr;
+    png_infop info_ptr;
+} write_png_t;
+
+void read_png_init(read_png_t* data) {
+    NVTX_RANGE_START(read_png_init);
     unsigned char sig[8];
-    FILE* fp = fopen(filename, "rb");
-    fread(sig, 1, 8, fp);
+    data->fp = fopen(data->filename, "rb");
+    fread(sig, 1, 8, data->fp);
     assert(png_check_sig(sig, 8));
-    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    assert(png_ptr);
-    png_infop info_ptr = png_create_info_struct(png_ptr);
-    assert(info_ptr);
-    png_init_io(png_ptr, fp);
-    png_set_sig_bytes(png_ptr, 8);
-    png_read_info(png_ptr, info_ptr);
+    data->png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    assert(data->png_ptr);
+    data->info_ptr = png_create_info_struct(data->png_ptr);
+    assert(data->info_ptr);
+    png_init_io(data->png_ptr, data->fp);
+    png_set_sig_bytes(data->png_ptr, 8);
+    png_read_info(data->png_ptr, data->info_ptr);
     int bit_depth, color_type;
-    png_get_IHDR(png_ptr, info_ptr, width, height, &bit_depth, &color_type, NULL, NULL, NULL);
-    png_bytep row_pointers[*height];
-    png_read_update_info(png_ptr, info_ptr);
-    unsigned channels = (int)png_get_channels(png_ptr, info_ptr);
+    png_get_IHDR(data->png_ptr, data->info_ptr, &data->width, &data->height, &bit_depth, &color_type, NULL, NULL, NULL);
+    png_read_update_info(data->png_ptr, data->info_ptr);
+    unsigned channels = (int)png_get_channels(data->png_ptr, data->info_ptr);
     assert(channels == 3);
-    *height_pad = (*height % BLOCK_Y == 0) ? *height : (*height / BLOCK_Y + 1) * BLOCK_Y;
-    *width_pad = (*width % BLOCK_X == 0) ? *width : (*width / BLOCK_X + 1) * BLOCK_X;
-    size_t size = 3 * (*width_pad + MASK_ADJ_X) * (*height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
-    *image = (unsigned char*)malloc(size);
-    assert(*image);
-    for (png_uint_32 i = 0; i < *height; ++i) {
-        row_pointers[i] = *image + (i + START_Y) * 3 * (*width_pad + MASK_ADJ_X) + START_X * 3;
-    }
-    png_read_image(png_ptr, row_pointers);
-    png_read_end(png_ptr, NULL);
-    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
-    fclose(fp);
+    data->height_pad = (data->height % BLOCK_Y == 0) ? data->height : (data->height / BLOCK_Y + 1) * BLOCK_Y;
+    data->width_pad = (data->width % BLOCK_X == 0) ? data->width : (data->width / BLOCK_X + 1) * BLOCK_X;
+    data->size = 3 * (data->width_pad + MASK_ADJ_X) * (data->height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
+    NVTX_RANGE_END();
 }
 
-void write_png(const char* filename, png_bytep image, const unsigned height, const unsigned width, const unsigned height_pad, const unsigned width_pad) {
-    FILE* fp = fopen(filename, "wb");
-    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    png_infop info_ptr = png_create_info_struct(png_ptr);
-    png_init_io(png_ptr, fp);
-    png_set_IHDR(png_ptr, info_ptr, width, height, 8,
+void read_png_rows(read_png_t* data, unsigned char* image, unsigned y, unsigned n) {
+    NVTX_RANGE_START(read_png_rows);
+    png_bytep row_pointers[n];
+    for (png_uint_32 i = 0; i < n; ++i) {
+        row_pointers[i] = image + (y + i + START_Y) * 3 * (data->width_pad + MASK_ADJ_X) + START_X * 3;
+    }
+    png_read_rows(data->png_ptr, row_pointers, NULL, n);
+    NVTX_RANGE_END();
+}
+
+void read_png_end(read_png_t* data) {
+    NVTX_RANGE_START(read_png_end);
+    png_read_end(data->png_ptr, NULL);
+    NVTX_RANGE_END();
+}
+
+void read_png_destroy(read_png_t* data) {
+    NVTX_RANGE_START(read_png_destroy);
+    png_destroy_read_struct(&data->png_ptr, &data->info_ptr, NULL);
+    fclose(data->fp);
+    NVTX_RANGE_END();
+}
+
+void write_png_init(write_png_t* data) {
+    NVTX_RANGE_START(write_png_init);
+    data->fp = fopen(data->filename, "wb");
+    data->png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    data->info_ptr = png_create_info_struct(data->png_ptr);
+    png_init_io(data->png_ptr, data->fp);
+    png_set_IHDR(data->png_ptr, data->info_ptr, data->width, data->height, 8,
                  PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
-    png_write_info(png_ptr, info_ptr);
-    png_set_compression_level(png_ptr, 0);
-    png_bytep row_ptr[height];
-    for (int i = 0; i < height; ++i) {
-        row_ptr[i] = image + (i + START_Y) * 3 * (width_pad + MASK_ADJ_X) * sizeof(unsigned char) + START_X * 3;
+    png_set_filter(data->png_ptr, 0, PNG_NO_FILTERS);
+    png_write_info(data->png_ptr, data->info_ptr);
+    png_set_compression_level(data->png_ptr, 0);
+    NVTX_RANGE_END();
+}
+
+void write_png_rows(write_png_t* data, unsigned char* image, unsigned y, unsigned n) {
+    NVTX_RANGE_START(write_png_rows);
+    png_bytep row_pointers[n];
+    for (int i = 0; i < n; ++i) {
+        row_pointers[i] = image + (y + i + START_Y) * 3 * (data->width_pad + MASK_ADJ_X) * sizeof(unsigned char) + START_X * 3;
     }
-    png_write_image(png_ptr, row_ptr);
-    png_write_end(png_ptr, NULL);
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-    fclose(fp);
+    png_write_rows(data->png_ptr, row_pointers, n);
+    NVTX_RANGE_END();
+}
+
+void write_png_end(write_png_t* data) {
+    NVTX_RANGE_START(write_png_end);
+    png_write_end(data->png_ptr, NULL);
+    NVTX_RANGE_END();
+}
+
+void write_png_destroy(write_png_t* data) {
+    NVTX_RANGE_START(write_png_destroy);
+    png_destroy_write_struct(&data->png_ptr, &data->info_ptr);
+    fclose(data->fp);
+    NVTX_RANGE_END();
 }
 
 __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned height_pad, unsigned width_pad) {
@@ -142,6 +203,8 @@ int main(int argc, char** argv) {
     char* input_filename = argv[1];
     char* output_filename = argv[2];
 
+    read_png_t read_data;
+    write_png_t write_data;
     size_t size;
     unsigned height, width, height_pad, width_pad;
     unsigned char* host_s = NULL;
@@ -150,32 +213,40 @@ int main(int argc, char** argv) {
     unsigned char* dev_t = NULL;
     dim3 blk, grid;
 
-    NVTX_RANGE_START(read_png);
-    read_png(input_filename, &host_s, &height, &width, &height_pad, &width_pad);
-    NVTX_RANGE_END();
+    // Get image info and initialize output image
+    read_data.filename = input_filename;
+    read_png_init(&read_data);
+    size = write_data.size = read_data.size;
+    height = write_data.height = read_data.height;
+    width = write_data.width = read_data.width;
+    height_pad = write_data.height_pad = read_data.height_pad;
+    width_pad = write_data.width_pad = read_data.width_pad;
+    write_data.filename = output_filename;
+    write_png_init(&write_data);
 
-    NVTX_RANGE_START(allocate);
     blk = dim3(BLOCK_X, BLOCK_Y);
     grid = dim3(width_pad / BLOCK_X, height_pad / BLOCK_Y);
-    size = 3 * (width_pad + MASK_ADJ_X) * (height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
+
+    NVTX_RANGE_START(allocate);
+    host_s = (unsigned char*)malloc(size);
     host_t = (unsigned char*)malloc(size);
     cudaMalloc(&dev_s, size);
     cudaMalloc(&dev_t, size);
     cudaMemset(dev_t, 0, size);
     NVTX_RANGE_END();
 
-    NVTX_RANGE_START(sobel_kernel);
+    read_png_rows(&read_data, host_s, 0, height);
     cudaMemcpyAsync(dev_s, host_s, size, cudaMemcpyHostToDevice);
     sobel<<<grid, blk>>>(dev_s, dev_t, height, width, height_pad, width_pad);
     cudaMemcpyAsync(host_t, dev_t, size, cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
-    NVTX_RANGE_END();
+    write_png_rows(&write_data, host_t, 0, write_data.height);
 
-    NVTX_RANGE_START(write_png);
-    write_png(output_filename, host_t, height, width, height_pad, width_pad);
-    NVTX_RANGE_END();
+    read_png_end(&read_data);
+    write_png_end(&write_data);
 
     NVTX_RANGE_START(free);
+    read_png_destroy(&read_data);
+    write_png_destroy(&write_data);
     free(host_s);
     free(host_t);
     cudaFree(dev_s);
