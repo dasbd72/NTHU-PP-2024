@@ -82,8 +82,7 @@ void write_png(const char* filename, png_bytep image, const unsigned height, con
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
     png_write_info(png_ptr, info_ptr);
-    png_set_compression_level(png_ptr, 1);
-
+    png_set_compression_level(png_ptr, 0);
     png_bytep row_ptr[height];
     for (int i = 0; i < height; ++i) {
         row_ptr[i] = image + i * width * channels * sizeof(unsigned char);
