@@ -14,6 +14,7 @@ class Args:
     procs = 1
     cpus = 1
     profile = "nsys"
+    vtune_collect = "hotspots"
     report_name = None
     program = "hw2a"
     testcase = None
@@ -52,6 +53,13 @@ def parse_arguments() -> Args:
         choices=["nsys", "vtune", "none"],
         default="none",
         help="Profiling tool",
+    )
+    parser.add_argument(
+        "--vtune-collect",
+        type=str,
+        choices=["hotspots", "memory-access"],
+        help="VTune collection type",
+        default="hotspots",
     )
     parser.add_argument(
         "--report-name",
@@ -164,11 +172,21 @@ def execute_program(tc, outputs_png, args: Args):
             )
     elif args.profile == "vtune":
         if args.program == "hw2a":
-            outputs_report = f"vtune-reports/hw2a/{report_name}/report"
+            outputs_report = (
+                f"vtune-reports/hw2a/{report_name}/{args.vtune_collect}/report"
+            )
             if os.path.exists(os.path.dirname(outputs_report)):
                 shutil.rmtree(os.path.dirname(outputs_report))
             os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
-            cmd = f"{cmd_srun} vtune -collect hotspots -r {outputs_report} -- {cmd_prog}"
+            cmd = f"{cmd_srun} vtune -collect {args.vtune_collect} -r {outputs_report} -- {cmd_prog}"
+        elif args.program == "hw2b":
+            outputs_report = (
+                f"vtune-reports/hw2b/{report_name}/{args.vtune_collect}/report"
+            )
+            if os.path.exists(os.path.dirname(outputs_report)):
+                shutil.rmtree(os.path.dirname(outputs_report))
+            os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
+            cmd = f"{cmd_srun} vtune -collect {args.vtune_collect} -trace-mpi -r {outputs_report} -- {cmd_prog}"
     else:
         cmd = f"{cmd_srun} {cmd_prog}"
 
