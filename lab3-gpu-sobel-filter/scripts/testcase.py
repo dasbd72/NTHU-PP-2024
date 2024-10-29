@@ -82,8 +82,9 @@ def run_testcase(testcase, args: Args):
 
     # Validate testcase files
     testcase_txt = f"{args.testcase_dir}/{testcase}"
+    testcase_input_png = f"{args.testcase_dir}/{testcase_base}.png"
     testcase_png = f"{args.testcase_dir}/{testcase_base}.out.png"
-    validate_files_exist([testcase_txt])
+    validate_files_exist([testcase_txt, testcase_input_png])
 
     if args.verify:
         validate_files_exist([testcase_png])
@@ -98,7 +99,7 @@ def run_testcase(testcase, args: Args):
     # Run the program
     tc = load_testcase_config(testcase_txt)
     clean_old_output(outputs_png)
-    execute_program(tc, testcase_png, outputs_png, args)
+    execute_program(tc, testcase_input_png, outputs_png, args)
 
     # Verification if needed
     if args.verify:
@@ -126,7 +127,7 @@ def clean_old_output(outputs_png):
         os.remove(outputs_png)
 
 
-def execute_program(tc: dict, testcase_png, outputs_png, args: Args):
+def execute_program(tc: dict, testcase_input_png, outputs_png, args: Args):
     """Executes the program with the given configuration."""
     cmd_srun = "srun -N 1 -n {} -c {} -p {} --gres=gpu:{}".format(
         tc.get("procs", 1),
@@ -134,7 +135,7 @@ def execute_program(tc: dict, testcase_png, outputs_png, args: Args):
         tc.get("partition", "gpu"),
         tc.get("gpus", 1),
     )
-    cmd_prog = f"./{args.program} {testcase_png} {outputs_png}"
+    cmd_prog = f"./{args.program} {testcase_input_png} {outputs_png}"
 
     if args.report_name is None:
         report_name = args.testcase
