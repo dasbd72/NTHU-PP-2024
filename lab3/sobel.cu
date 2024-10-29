@@ -1,0 +1,1 @@
+../lab3-gpu-sobel-filter/sobel.cu

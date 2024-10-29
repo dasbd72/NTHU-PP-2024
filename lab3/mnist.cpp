@@ -1,0 +1,1 @@
+../lab3-opanacc-mnist/mnist.cpp
