@@ -40,9 +40,11 @@ using namespace std;
  *          (b) CUDA kernel function
  */
 void LinearLayer(float *A, float *B, float *C, float *D, int n, int k, int m) {
+#pragma acc parallel loop copyin(A[0 : n * k], B[0 : k * m], C[0 : m]) copyout(D[0 : n * m]) independent tile(32, 32) vector_length(32)
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++) {
             float sum = C[j];
+#pragma acc loop reduction(+ : sum)
             for (int a = 0; a < k; a++) {
                 // sum += A[i][a] * B[a][j]
                 sum += A[i * k + a] * B[a * m + j];
@@ -59,6 +61,7 @@ void LinearLayer(float *A, float *B, float *C, float *D, int n, int k, int m) {
 
 /* TODO: Parallel the for loops */
 void Sigmoid(float *A, int n, int m) {
+#pragma acc parallel loop copyin(A[0 : n * m]) copyout(A[0 : n * m]) independent
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++) {
             // Sigmoid(x) = 1/(1+exp(x))
@@ -74,6 +77,7 @@ void Sigmoid(float *A, int n, int m) {
 
 /* TODO: Parallel the for loops */
 void Argmax(float *A, int *D, int n, int m) {
+#pragma acc parallel loop copyin(A[0 : n * m]) copyout(D[0 : n]) independent
     for (int i = 0; i < n; i++) {
         float mx = A[i * m];
         int index = 0;
