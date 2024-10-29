@@ -479,6 +479,30 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     vec_length_squared = _mm512_fmadd_pd(vec_x, vec_x, vec_y_sq);                                    \
     vec_repeats = _mm256_mask_add_epi32(vec_repeats, length_valid_mask, vec_repeats, vec_8_1_epi32); \
     length_valid_mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);  // INNER_LOOP_COMPUTATION
+#define STATIC_INITIALIZATION()  \
+    vec_repeats = vec_8_0_epi32; \
+    vec_x = vec_8_0;             \
+    vec_x_sq = vec_8_0;          \
+    vec_y = vec_8_0;             \
+    vec_y_sq = vec_8_0;  // STATIC_INITIALIZATION
+#define STATIC_STORE_RESULTS(i) \
+    buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);  // STATIC_STORE_RESULTS
+#define DYNAMIC_INITIALIZATION()                                                     \
+    vec_repeats = _mm256_mask_mov_epi32(vec_repeats, mini_done_mask, vec_8_0_epi32); \
+    vec_x = _mm512_mask_mov_pd(vec_x, mini_done_mask, vec_8_0);                      \
+    vec_x_sq = _mm512_mask_mov_pd(vec_x_sq, mini_done_mask, vec_8_0);                \
+    vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, vec_8_0);                      \
+    vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, vec_8_0);                \
+    length_valid_mask |= mini_done_mask;  // DYNAMIC_INITIALIZATION
+#define DYNAMIC_STORE_RESULTS(i)                                                       \
+    if (mini_done_mask & (1 << i)) {                                                   \
+        buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i); \
+        if (pi < num_pixels) {                                                         \
+            vec_p = _mm256_insert_epi32(vec_p, pixels[pi++], i);                       \
+        } else {                                                                       \
+            done_mask |= 1 << i;                                                       \
+        }                                                                              \
+    }  // DYNAMIC_STORE_RESULTS
     if (mini_iters * 10 >= iters) {
         // Static scheduling
         for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
@@ -486,11 +510,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             // Calculate pixel coordinates
             PIXEL_COORDINATES()
             // Initialize iteration variables
-            vec_repeats = vec_8_0_epi32;
-            vec_x = vec_8_0;
-            vec_x_sq = vec_8_0;
-            vec_y = vec_8_0;
-            vec_y_sq = vec_8_0;
+            STATIC_INITIALIZATION()
             // Initialize masks
             length_valid_mask = 0xFF;
             for (int r = 0; r < iters && length_valid_mask; r++) {
@@ -498,8 +518,6 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             }
 
             // Store results
-#define STATIC_STORE_RESULTS(i) \
-    buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);  // STATIC_STORE_RESULTS
             STATIC_STORE_RESULTS(0)
             STATIC_STORE_RESULTS(1)
             STATIC_STORE_RESULTS(2)
@@ -522,14 +540,8 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             // Initialize values for mini iterations done entries
             // Calculate pixel coordinates
             PIXEL_COORDINATES()
-            // Initialize iteration variables
-            vec_repeats = _mm256_mask_mov_epi32(vec_repeats, mini_done_mask, vec_8_0_epi32);
-            vec_x = _mm512_mask_mov_pd(vec_x, mini_done_mask, vec_8_0);
-            vec_x_sq = _mm512_mask_mov_pd(vec_x_sq, mini_done_mask, vec_8_0);
-            vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, vec_8_0);
-            vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, vec_8_0);
-            // Initialize masks
-            length_valid_mask |= mini_done_mask;
+            // Initialize iteration variables & masks
+            DYNAMIC_INITIALIZATION()
             for (int r = 0; r < mini_iters && length_valid_mask; r++) {
                 INNER_LOOP_COMPUTATION()
             }
@@ -539,15 +551,6 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
 
             // Store results
-#define DYNAMIC_STORE_RESULTS(i)                                                       \
-    if (mini_done_mask & (1 << i)) {                                                   \
-        buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i); \
-        if (pi < num_pixels) {                                                         \
-            vec_p = _mm256_insert_epi32(vec_p, pixels[pi++], i);                       \
-        } else {                                                                       \
-            done_mask |= 1 << i;                                                       \
-        }                                                                              \
-    }  // DYNAMIC_STORE_RESULTS
             DYNAMIC_STORE_RESULTS(0)
             DYNAMIC_STORE_RESULTS(1)
             DYNAMIC_STORE_RESULTS(2)
