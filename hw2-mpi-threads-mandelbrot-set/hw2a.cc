@@ -597,12 +597,12 @@ void Solver::write_png(const png_bytep image) const {
     assert(png_ptr);
     png_infop info_ptr = png_create_info_struct(png_ptr);
     assert(info_ptr);
-    png_init_io(png_ptr, fp);
     png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
-    png_write_info(png_ptr, info_ptr);
     png_set_compression_level(png_ptr, 0);
+    png_init_io(png_ptr, fp);
+    png_write_info(png_ptr, info_ptr);
     NVTX_RANGE_END()
     NVTX_RANGE_START(write_png_loop)
     png_bytep* rows = (png_bytep*)malloc(height * sizeof(png_bytep));
