@@ -71,36 +71,6 @@ class Solver {
         int end_pixel;
         const int* buffer;
     };
-#ifdef MPI_ENABLED
-    struct MPITask {
-        int start_pixel;
-        int end_pixel;
-    };
-    struct PartialBuffer {
-        MPITask task;
-        int buffer[max_buffer_size];
-    };
-    struct MasterSharedData {
-        Solver* solver;
-        int num_procs;
-        int batch_size;
-        int* buffer;
-        MPITask shared_task;
-        pthread_mutex_t mutex;
-    };
-    struct MasterThreadData {
-        MasterSharedData* shared;
-        int rank;
-        MPITask init_task;
-    };
-    struct WorkerSharedData {
-        Solver* solver;
-    };
-    struct WorkerThreadData {
-        WorkerSharedData* shared;
-        MPITask init_task;
-    };
-#endif
 
     // Arguments
     char* filename;
