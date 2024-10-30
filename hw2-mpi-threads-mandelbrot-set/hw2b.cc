@@ -14,13 +14,13 @@
 #include <iostream>
 #if MULTITHREADED == 1
 #include <pthread.h>
-#endif
+#endif  // MULTITHREADED == 1
 #if MULTITHREADED == 2
 #include <omp.h>
-#endif
+#endif  // MULTITHREADED == 2
 #ifdef MPI_ENABLED
 #include <mpi.h>
-#endif
+#endif  // MPI_ENABLED
 
 #ifdef PROFILING
 #include <nvtx3/nvtx3.hpp>
@@ -82,7 +82,7 @@ class Solver {
     __m512d vec_8_left;
     __m512d vec_8_lower;
     __m256i vec_8_iters_epi32;
-#endif
+#endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
 
     png_bytep pm_image;
     int* pm_pixels;
@@ -94,17 +94,17 @@ class Solver {
     int pm_shared_pixel;
 #if MULTITHREADED == 1
     pthread_mutex_t pm_mutex;
-#endif
+#endif  // MULTITHREADED == 1
 
     void random_choices(int* buffer, int buffer_size, int seed, int chunk_size);
     void mandelbrot();
 #ifdef MPI_ENABLED
     void mandelbrot_mpi();
-#endif
+#endif  // MPI_ENABLED
     void partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, int* buffer);
 #if MULTITHREADED == 1
     static void* pthreads_partial_mandelbrot_thread(void* arg);
-#endif
+#endif  // MULTITHREADED == 1
     void partial_mandelbrot_thread();
     void partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer);
 
@@ -142,7 +142,7 @@ int Solver::solve(int argc, char** argv) {
 #else
     world_size = 1;
     world_rank = 0;
-#endif
+#endif  // MPI_ENABLED
     // detect how many CPUs are available
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
@@ -169,7 +169,7 @@ int Solver::solve(int argc, char** argv) {
     vec_8_left = _mm512_set1_pd(left);
     vec_8_lower = _mm512_set1_pd(lower);
     vec_8_iters_epi32 = _mm256_set1_epi32(iters);
-#endif
+#endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
 
 #ifdef MPI_ENABLED
     if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
@@ -181,15 +181,15 @@ int Solver::solve(int argc, char** argv) {
     }
 #else
     mandelbrot();
-#endif
+#endif  // MPI_ENABLED
 
 #ifdef MPI_ENABLED
 #ifndef NO_FINALIZE
     NVTX_RANGE_START(MPI_Finalize)
     MPI_Finalize();
     NVTX_RANGE_END()
-#endif
-#endif
+#endif  // NO_FINALIZE
+#endif  // MPI_ENABLED
     NVTX_RANGE_END()
     return 0;
 }
@@ -216,7 +216,7 @@ void Solver::random_choices(int* buffer, int buffer_size, int seed, int chunk_si
     }
 #ifndef NO_FINALIZE
     free(chunks);
-#endif
+#endif  // NO_FINALIZE
 }
 
 void Solver::mandelbrot() {
@@ -244,7 +244,7 @@ void Solver::mandelbrot() {
     free(pixels);
     free(buffer);
     free(image);
-#endif
+#endif  // NO_FINALIZE
 }
 
 #ifdef MPI_ENABLED
@@ -299,22 +299,22 @@ void Solver::mandelbrot_mpi() {
     if (world_rank == 0) {
         free(agg_image);
     }
-#endif
+#endif  // NO_FINALIZE
 }
-#endif
+#endif  // MPI_ENABLED
 
 void Solver::partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, int* buffer) {
     const int num_threads = num_cpus;
 #if MULTITHREADED == 1 || MULTITHREADED == 2
     const int batch_size = std::min(width * height >= 10000000 ? 2048 : 512, (int)std::ceil((double)width * height / num_threads));
-#endif
+#endif  // MULTITHREADED == 1 || MULTITHREADED == 2
 
     // Set up shared data
     if (num_threads > 1) {
 #if MULTITHREADED == 1 || MULTITHREADED == 2
 #if MULTITHREADED == 1
         pthread_t threads[max_num_cpus];
-#endif
+#endif  // MULTITHREADED == 1
         pm_num_threads = num_threads;
         pm_batch_size = batch_size;
         pm_start_pixel = 0;
@@ -325,8 +325,8 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, in
         pm_image = image;
 #if MULTITHREADED == 1
         pm_mutex = PTHREAD_MUTEX_INITIALIZER;
-#endif
-#endif
+#endif  // MULTITHREADED == 1
+#endif  // MULTITHREADED == 1 || MULTITHREADED == 2
 #if MULTITHREADED == 1
         for (int i = 0; i < num_threads; i++) {
             pthread_create(&threads[i], NULL, pthreads_partial_mandelbrot_thread, (void*)this);
@@ -342,7 +342,7 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, in
 #else
         partial_mandelbrot_single_thread(pixels, num_pixels, buffer);
         pixels_to_image_single_thread(image, pixels, num_pixels, buffer);
-#endif
+#endif  // MULTITHREADED
     } else {
         partial_mandelbrot_single_thread(pixels, num_pixels, buffer);
         pixels_to_image_single_thread(image, pixels, num_pixels, buffer);
@@ -365,16 +365,16 @@ void Solver::partial_mandelbrot_thread() {
         NVTX_RANGE_START(thread_critical)
 #if MULTITHREADED == 2
 #pragma omp critical
-#endif
+#endif  // MULTITHREADED == 2
         {
 #if MULTITHREADED == 1
             pthread_mutex_lock(&pm_mutex);
-#endif
+#endif  // MULTITHREADED == 1
             curr_start_pixel = pm_shared_pixel;
             pm_shared_pixel += pm_batch_size;
 #if MULTITHREADED == 1
             pthread_mutex_unlock(&pm_mutex);
-#endif
+#endif  // MULTITHREADED == 1
         }
         NVTX_RANGE_END()
         if (curr_start_pixel >= pm_end_pixel) {
@@ -526,7 +526,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
         }
     }
     NVTX_RANGE_END()
-#endif
+#endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
     NVTX_RANGE_START(partial_mandelbrot_pixels)
     for (; pi < num_pixels; ++pi) {
         int j = trans_pixels[pi] / width;
