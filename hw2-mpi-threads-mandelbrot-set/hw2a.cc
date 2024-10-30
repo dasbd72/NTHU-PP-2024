@@ -116,6 +116,10 @@ class Solver {
     int world_rank;
     int world_size;
 
+    FILE* fp;
+    png_structp png_ptr;
+    png_infop info_ptr;
+
     // Shared derived variables
     double h_norm;
     double w_norm;
@@ -145,12 +149,15 @@ class Solver {
 #endif
     void partial_mandelbrot_thread(ThreadData* thread_data);
     void partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer);
-    void write_png(const png_bytep image) const;
 #if MULTITHREADED == 1
     static void* pthreads_write_png_fill_rows_thread(void* arg);
 #endif
     void write_png_fill_rows(png_bytep image, const int* buffer) const;
     void write_png_fill_rows_thread(PNGFillThreadData* thread_data) const;
+    void write_png_init();
+    void write_png_rows(const png_bytep image, int y, int n) const;
+    void write_png_end() const;
+    void write_png_cleanup();
 };
 
 int main(int argc, char** argv) {
@@ -211,7 +218,9 @@ int Solver::solve(int argc, char** argv) {
 
 #ifdef MPI_ENABLED
     if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
-        mandelbrot();
+        if (world_rank == 0) {
+            mandelbrot();
+        }
     } else {
         mandelbrot_mpi();
     }
@@ -270,15 +279,18 @@ void Solver::mandelbrot() {
     NVTX_RANGE_END()
 
     // draw and cleanup
-    if (world_rank == 0) {
-        NVTX_RANGE_START(write_png)
-        write_png_fill_rows(image, buffer);
-        write_png(image);
-        NVTX_RANGE_END()
-    }
+    NVTX_RANGE_START(write_png)
+    write_png_fill_rows(image, buffer);
+    write_png_init();
+    write_png_rows(image, 0, height);
+    write_png_end();
+    NVTX_RANGE_END()
+#ifndef NO_FINALIZE
+    write_png_cleanup();
     free(pixels);
     free(buffer);
     free(image);
+#endif
 }
 
 #ifdef MPI_ENABLED
@@ -320,10 +332,13 @@ void Solver::mandelbrot_mpi() {
     if (world_rank == 0) {
         NVTX_RANGE_START(write_png)
         write_png_fill_rows(image, buffer);
-        write_png(image);
+        write_png_init();
+        write_png_rows(image, 0, height);
+        write_png_end();
         NVTX_RANGE_END()
     }
 #ifndef NO_FINALIZE
+    write_png_cleanup();
     free(pixels);
     free(tmp_buffer);
     if (world_rank == 0) {
@@ -589,38 +604,6 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     NVTX_RANGE_END()
 }
 
-void Solver::write_png(const png_bytep image) const {
-    NVTX_RANGE_START(write_png_setup)
-    FILE* fp = fopen(filename, "wb");
-    assert(fp);
-    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    assert(png_ptr);
-    png_infop info_ptr = png_create_info_struct(png_ptr);
-    assert(info_ptr);
-    png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
-                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_set_filter(png_ptr, 0, PNG_FILTER_NONE);
-    png_set_compression_level(png_ptr, 0);
-    png_init_io(png_ptr, fp);
-    png_write_info(png_ptr, info_ptr);
-    NVTX_RANGE_END()
-    NVTX_RANGE_START(write_png_loop)
-    png_bytep* rows = (png_bytep*)malloc(height * sizeof(png_bytep));
-    for (int i = 0; i < height; i++) {
-        rows[i] = image + i * width * 3;
-    }
-    png_write_image(png_ptr, rows);
-    NVTX_RANGE_END()
-    NVTX_RANGE_START(write_png_cleanup)
-    png_write_end(png_ptr, NULL);
-#ifndef NO_FINALIZE
-    free(rows);
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-    fclose(fp);
-#endif
-    NVTX_RANGE_END()
-}
-
 #if MULTITHREADED == 1
 void* Solver::pthreads_write_png_fill_rows_thread(void* arg) {
     PNGFillThreadData* thread_data = (PNGFillThreadData*)arg;
@@ -689,4 +672,45 @@ void Solver::write_png_fill_rows_thread(PNGFillThreadData* thread_data) const {
             color[0] = color[1] = color[2] = 0;
         }
     }
+}
+
+void Solver::write_png_init() {
+    NVTX_RANGE_START(write_png_init)
+    fp = fopen(filename, "wb");
+    assert(fp);
+    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    assert(png_ptr);
+    info_ptr = png_create_info_struct(png_ptr);
+    assert(info_ptr);
+    png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_set_filter(png_ptr, 0, PNG_FILTER_NONE);
+    png_set_compression_level(png_ptr, 0);
+    png_init_io(png_ptr, fp);
+    png_write_info(png_ptr, info_ptr);
+    NVTX_RANGE_END()
+}
+
+void Solver::write_png_rows(const png_bytep image, int y, int n) const {
+    NVTX_RANGE_START(write_png_rows)
+    png_bytep* rows = (png_bytep*)malloc(n * sizeof(png_bytep));
+    for (int i = 0; i < n; i++) {
+        rows[i] = image + (y + i) * width * 3;
+    }
+    png_write_rows(png_ptr, rows, n);
+    free(rows);
+    NVTX_RANGE_END()
+}
+
+void Solver::write_png_end() const {
+    NVTX_RANGE_START(write_png_end)
+    png_write_end(png_ptr, NULL);
+    NVTX_RANGE_END()
+}
+
+void Solver::write_png_cleanup() {
+    NVTX_RANGE_START(write_png_cleanup)
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    fclose(fp);
+    NVTX_RANGE_END()
 }
