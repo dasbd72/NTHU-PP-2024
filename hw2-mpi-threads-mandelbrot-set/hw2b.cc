@@ -401,12 +401,15 @@ void Solver::partial_mandelbrot_thread() {
 }
 
 void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer) {
+    NVTX_RANGE_START(partial_mandelbrot_pixel_translation)
     int* trans_pixels = (int*)malloc(num_pixels * sizeof(int));
+#pragma GCC ivdep
     for (int i = 0; i < num_pixels; i++) {
         int x = pixels[i] % width;
         int y = pixels[i] / width;
         trans_pixels[i] = (height - 1 - y) * width + x;
     }
+    NVTX_RANGE_END()
     NVTX_RANGE_START(partial_mandelbrot_sort)
     boost::sort::spreadsort::integer_sort(trans_pixels, trans_pixels + num_pixels);
     NVTX_RANGE_END()
