@@ -48,24 +48,6 @@ class Solver {
     int solve(int argc, char** argv);
 
    private:
-    struct SharedData {
-        Solver* solver;
-        int num_threads;
-        int batch_size;
-        int* pixels;
-        int start_pixel;
-        int end_pixel;
-        int shared_pixel;
-        int* buffer;
-        png_bytep image;
-#if MULTITHREADED == 1
-        pthread_mutex_t mutex;
-#endif
-    };
-    struct ThreadData {
-        SharedData* shared;
-    };
-
     // Arguments
     char* filename;
     int iters;
@@ -102,6 +84,18 @@ class Solver {
     __m256i vec_8_iters_epi32;
 #endif
 
+    png_bytep pm_image;
+    int* pm_pixels;
+    int* pm_buffer;
+    int pm_num_threads;
+    int pm_batch_size;
+    int pm_start_pixel;
+    int pm_end_pixel;
+    int pm_shared_pixel;
+#if MULTITHREADED == 1
+    pthread_mutex_t pm_mutex;
+#endif
+
     void random_choices(int* buffer, int buffer_size, int seed, int chunk_size);
     void mandelbrot();
 #ifdef MPI_ENABLED
@@ -111,7 +105,7 @@ class Solver {
 #if MULTITHREADED == 1
     static void* pthreads_partial_mandelbrot_thread(void* arg);
 #endif
-    void partial_mandelbrot_thread(ThreadData* thread_data);
+    void partial_mandelbrot_thread();
     void partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer);
 
     void pixels_to_image_single_thread(png_bytep image, int* pixels, int num_pixels, const int* buffer) const;
@@ -303,7 +297,6 @@ void Solver::mandelbrot_mpi() {
     free(buffer);
     free(image);
     if (world_rank == 0) {
-        free(buffer);
         free(agg_image);
     }
 #endif
@@ -322,27 +315,21 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, in
 #if MULTITHREADED == 1
         pthread_t threads[max_num_cpus];
 #endif
-        SharedData shared_data;
-        shared_data.solver = this;
-        shared_data.num_threads = num_threads;
-        shared_data.batch_size = batch_size;
-        shared_data.pixels = pixels;
-        shared_data.start_pixel = 0;
-        shared_data.end_pixel = num_pixels;
-        shared_data.shared_pixel = 0;
-        shared_data.buffer = buffer;
-        shared_data.image = image;
+        pm_num_threads = num_threads;
+        pm_batch_size = batch_size;
+        pm_start_pixel = 0;
+        pm_pixels = pixels;
+        pm_end_pixel = num_pixels;
+        pm_shared_pixel = 0;
+        pm_buffer = buffer;
+        pm_image = image;
 #if MULTITHREADED == 1
-        shared_data.mutex = PTHREAD_MUTEX_INITIALIZER;
+        pm_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
-        ThreadData thread_data_array[max_num_cpus];
-        for (int i = 0; i < num_threads; i++) {
-            thread_data_array[i].shared = &shared_data;
-        }
 #endif
 #if MULTITHREADED == 1
         for (int i = 0; i < num_threads; i++) {
-            pthread_create(&threads[i], NULL, pthreads_partial_mandelbrot_thread, (void*)&thread_data_array[i]);
+            pthread_create(&threads[i], NULL, pthreads_partial_mandelbrot_thread, (void*)this);
         }
         for (int i = 0; i < num_threads; i++) {
             pthread_join(threads[i], NULL);
@@ -350,7 +337,7 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, in
 #elif MULTITHREADED == 2
 #pragma omp parallel num_threads(num_threads)
         {
-            partial_mandelbrot_thread(&thread_data_array[omp_get_thread_num()]);
+            partial_mandelbrot_thread();
         }
 #else
         partial_mandelbrot_single_thread(pixels, num_pixels, buffer);
@@ -364,25 +351,13 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, int num_pixels, in
 
 #if MULTITHREADED == 1
 void* Solver::pthreads_partial_mandelbrot_thread(void* arg) {
-    ThreadData* thread_data = (ThreadData*)arg;
-    thread_data->shared->solver->partial_mandelbrot_thread(thread_data);
+    Solver* solver = (Solver*)arg;
+    solver->partial_mandelbrot_thread();
     return NULL;
 }
 #endif
 
-void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
-    SharedData* shared = thread_data->shared;
-    Solver* solver = shared->solver;
-    int batch_size = shared->batch_size;
-    const int num_threads = shared->num_threads;
-    const int end_pixel = shared->end_pixel;
-    int* pixels = shared->pixels;
-    int* buffer = shared->buffer;
-    png_bytep image = shared->image;
-#if MULTITHREADED == 1
-    pthread_mutex_t* mutex = &shared->mutex;
-#endif
-
+void Solver::partial_mandelbrot_thread() {
     NVTX_RANGE_START(thread)
     while (true) {
         int curr_start_pixel;
@@ -393,24 +368,24 @@ void Solver::partial_mandelbrot_thread(ThreadData* thread_data) {
 #endif
         {
 #if MULTITHREADED == 1
-            pthread_mutex_lock(mutex);
+            pthread_mutex_lock(&pm_mutex);
 #endif
-            curr_start_pixel = shared->shared_pixel;
-            shared->shared_pixel += batch_size;
+            curr_start_pixel = pm_shared_pixel;
+            pm_shared_pixel += pm_batch_size;
 #if MULTITHREADED == 1
-            pthread_mutex_unlock(mutex);
+            pthread_mutex_unlock(&pm_mutex);
 #endif
         }
         NVTX_RANGE_END()
-        if (curr_start_pixel >= end_pixel) {
+        if (curr_start_pixel >= pm_end_pixel) {
             break;
         }
-        curr_end_pixel = std::min(curr_start_pixel + batch_size, end_pixel);
+        curr_end_pixel = std::min(curr_start_pixel + pm_batch_size, pm_end_pixel);
         NVTX_RANGE_START(partial_mandelbrot_single_thread)
-        solver->partial_mandelbrot_single_thread(pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, buffer);
+        partial_mandelbrot_single_thread(pm_pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, pm_buffer);
         NVTX_RANGE_END()
         NVTX_RANGE_START(pixels_to_image_single_thread)
-        solver->pixels_to_image_single_thread(image, pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, buffer);
+        pixels_to_image_single_thread(pm_image, pm_pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, pm_buffer);
         NVTX_RANGE_END()
     }
     NVTX_RANGE_END()
@@ -576,6 +551,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
         buffer[trans_pixels[pi]] = repeats;
     }
     NVTX_RANGE_END()
+    free(trans_pixels);
 }
 
 /*
