@@ -599,7 +599,7 @@ void Solver::write_png(const png_bytep image) const {
     assert(info_ptr);
     png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_set_filter(png_ptr, 0, PNG_NO_FILTERS);
+    png_set_filter(png_ptr, 0, PNG_FILTER_NONE);
     png_set_compression_level(png_ptr, 0);
     png_init_io(png_ptr, fp);
     png_write_info(png_ptr, info_ptr);
