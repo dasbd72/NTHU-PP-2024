@@ -132,7 +132,7 @@ void write_png_init(write_png_t* data) {
     png_set_IHDR(data->png_ptr, data->info_ptr, data->width, data->height, 8,
                  PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_set_filter(data->png_ptr, 0, PNG_NO_FILTERS);
+    png_set_filter(data->png_ptr, 0, PNG_FILTER_NONE);
     png_write_info(data->png_ptr, data->info_ptr);
     png_set_compression_level(data->png_ptr, 0);
     NVTX_RANGE_END();
