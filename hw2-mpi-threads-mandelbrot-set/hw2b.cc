@@ -223,16 +223,20 @@ void Solver::random_choices(int* buffer, int buffer_size, int seed, int chunk_si
 }
 
 void Solver::mandelbrot() {
+    int *pixels, *buffer;
+    char* pixels_done;
+    png_bytep image;
+    pthread_t thread_png;
+
     // allocate memory for image
-    int* pixels = (int*)malloc(width * height * sizeof(int));
+    pixels = (int*)malloc(width * height * sizeof(int));
     for (int i = 0; i < width * height; i++) {
         pixels[i] = i;
     }
-    char* pixels_done = (char*)malloc(width * height * sizeof(char));
+    pixels_done = (char*)malloc(width * height * sizeof(char));
     memset(pixels_done, 0, width * height * sizeof(char));
-    int* buffer = (int*)malloc(width * height * sizeof(int));
-    png_bytep image = (png_bytep)malloc(height * width * 3);
-    pthread_t thread_png;
+    buffer = (int*)malloc(width * height * sizeof(int));
+    image = (png_bytep)malloc(height * width * 3);
 
     // Create a thread to write PNG
     pthread_create(&thread_png, NULL, pthreads_write_png_controller_thread, (void*)this);
@@ -242,7 +246,6 @@ void Solver::mandelbrot() {
     partial_mandelbrot(image, pixels, pixels_done, width * height, buffer);
     NVTX_RANGE_END()
 
-    // wait for the PNG thread to finish
     pthread_join(thread_png, NULL);
 #ifndef NO_FINALIZE
     write_png_cleanup();
