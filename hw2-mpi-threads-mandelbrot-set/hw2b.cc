@@ -431,7 +431,6 @@ void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* bu
     NVTX_RANGE_START(partial_mandelbrot_pixels_vec_8)
     // Constants
     const int vec_8_size = 8;
-    const int mini_iters = std::min(500, iters);
     // Declare variables
     // Coordinates
     __m256i vec_p;
@@ -449,9 +448,12 @@ void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* bu
     __m512d vec_x_y, vec_length_squared;
     // Masks
     __mmask8 length_valid_mask;
+#ifdef POOLING_ENABLED
+    const int mini_iters = std::min(200, iters);
     __mmask8 repeats_exceed_mask;
     __mmask8 mini_done_mask;
     __mmask8 done_mask;
+#endif  // POOLING_ENABLED
 #define PIXEL_COORDINATES()                                                \
     vec_p_offset = _mm512_cvtepi32_pd(vec_p);                              \
     vec_j = _mm512_floor_pd(_mm512_mul_pd(vec_p_offset, vec_8_inv_width)); \
@@ -467,6 +469,16 @@ void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* bu
     vec_length_squared = _mm512_fmadd_pd(vec_x, vec_x, vec_y_sq);                                    \
     vec_repeats = _mm256_mask_add_epi32(vec_repeats, length_valid_mask, vec_repeats, vec_8_1_epi32); \
     length_valid_mask = _mm512_cmp_pd_mask(vec_length_squared, vec_8_4, _CMP_LT_OQ);  // INNER_LOOP_COMPUTATION
+#ifndef POOLING_ENABLED
+#define STATIC_STORE_EXPAND(F) \
+    F(0);                      \
+    F(1);                      \
+    F(2);                      \
+    F(3);                      \
+    F(4);                      \
+    F(5);                      \
+    F(6);                      \
+    F(7);  // STATIC_STORE_EXPAND
 #define STATIC_INITIALIZATION()  \
     vec_repeats = vec_8_0_epi32; \
     vec_x = vec_8_0;             \
@@ -475,6 +487,22 @@ void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* bu
     vec_y_sq = vec_8_0;  // STATIC_INITIALIZATION
 #define STATIC_STORE_RESULTS(i) \
     buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i);  // STATIC_STORE_RESULTS
+    for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
+        vec_p = _mm256_loadu_si256((__m256i*)&trans_pixels[pi]);
+        // Calculate pixel coordinates
+        PIXEL_COORDINATES()
+        // Initialize iteration variables
+        STATIC_INITIALIZATION()
+        // Initialize masks
+        length_valid_mask = 0xFF;
+        for (int r = 0; r < iters && length_valid_mask; r++) {
+            INNER_LOOP_COMPUTATION()
+        }
+
+        // Store results
+        STATIC_STORE_EXPAND(STATIC_STORE_RESULTS)
+    }
+#else  // POOLING_ENABLED
 #define DYNAMIC_INITIALIZATION()                                                     \
     vec_repeats = _mm256_mask_mov_epi32(vec_repeats, mini_done_mask, vec_8_0_epi32); \
     vec_x = _mm512_mask_mov_pd(vec_x, mini_done_mask, vec_8_0);                      \
@@ -500,79 +528,64 @@ void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* bu
             done_mask |= 1 << i;                                                           \
         }                                                                                  \
     }  // DYNAMIC_STORE_RESULTS_CMP
-#define STORE_EXPAND(F) \
-    F(0);               \
-    F(1);               \
-    F(2);               \
-    F(3);               \
-    F(4);               \
-    F(5);               \
-    F(6);               \
-    F(7);  // STORE_EXPAND
-    if (mini_iters * 10 >= iters) {
-        // Static scheduling
-        for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
-            vec_p = _mm256_loadu_si256((__m256i*)&trans_pixels[pi]);
-            // Calculate pixel coordinates
-            PIXEL_COORDINATES()
-            // Initialize iteration variables
-            STATIC_INITIALIZATION()
-            // Initialize masks
-            length_valid_mask = 0xFF;
-            for (int r = 0; r < iters && length_valid_mask; r++) {
-                INNER_LOOP_COMPUTATION()
-            }
-
-            // Store results
-            STORE_EXPAND(STATIC_STORE_RESULTS)
+#define DYNAMIC_STORE_EXPAND(F)        \
+    if (mini_done_mask & 0b00001111) { \
+        F(0);                          \
+        F(1);                          \
+        F(2);                          \
+        F(3);                          \
+    }                                  \
+    if (mini_done_mask & 0b11110000) { \
+        F(4);                          \
+        F(5);                          \
+        F(6);                          \
+        F(7);                          \
+    }  // DYNAMIC_STORE_EXPAND
+    // Load first 8 pixels
+    vec_p = _mm256_loadu_si256((__m256i*)&trans_pixels[pi]);
+    pi += vec_8_size;
+    // Initialize masks
+    length_valid_mask = 0xFF;
+    mini_done_mask = 0xFF;
+    done_mask = 0x0;
+    while (pi < num_pixels - vec_8_size) {
+        // Initialize values for mini iterations done entries
+        // Calculate pixel coordinates
+        PIXEL_COORDINATES()
+        // Initialize iteration variables & masks
+        DYNAMIC_INITIALIZATION()
+        for (int r = 0; r < mini_iters && length_valid_mask; r++) {
+            INNER_LOOP_COMPUTATION()
         }
-    } else if (pi + vec_8_size - 1 < num_pixels) {
-        // Dynamic scheduling
-        // Load first 8 pixels
-        vec_p = _mm256_loadu_si256((__m256i*)&trans_pixels[pi]);
-        pi += vec_8_size;
-        // Initialize masks
-        length_valid_mask = 0xFF;
-        mini_done_mask = 0xFF;
-        done_mask = 0x0;
-        while (pi < num_pixels - vec_8_size) {
-            // Initialize values for mini iterations done entries
-            // Calculate pixel coordinates
-            PIXEL_COORDINATES()
-            // Initialize iteration variables & masks
-            DYNAMIC_INITIALIZATION()
-            for (int r = 0; r < mini_iters && length_valid_mask; r++) {
-                INNER_LOOP_COMPUTATION()
-            }
-            // Clamp repeats to iters
-            repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
-            mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & 0xFF;
-
-            // Store results
-            STORE_EXPAND(DYNAMIC_STORE_RESULTS)
-        }
-        while (done_mask != 0xFF) {
-            // Initialize values for mini iterations done entries
-            // Calculate pixel coordinates
-            PIXEL_COORDINATES()
-            // Initialize iteration variables & masks
-            DYNAMIC_INITIALIZATION()
-            for (int r = 0; r < mini_iters && length_valid_mask; r++) {
-                INNER_LOOP_COMPUTATION()
-            }
-            // Clamp repeats to iters
-            repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
-            mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
-
-            // Store results
-            STORE_EXPAND(DYNAMIC_STORE_RESULTS_CMP)
-        }
-#pragma GCC ivdep
         // Clamp repeats to iters
-        for (pi = 0; pi < num_pixels; ++pi) {
-            buffer[trans_pixels[pi]] = std::min(buffer[trans_pixels[pi]], iters);
-        }
+        repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
+        mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & 0xFF;
+
+        // Store results
+        DYNAMIC_STORE_EXPAND(DYNAMIC_STORE_RESULTS)
     }
+    while (done_mask != 0xFF) {
+        // Initialize values for mini iterations done entries
+        // Calculate pixel coordinates
+        PIXEL_COORDINATES()
+        // Initialize iteration variables & masks
+        DYNAMIC_INITIALIZATION()
+        for (int r = 0; r < mini_iters && length_valid_mask; r++) {
+            INNER_LOOP_COMPUTATION()
+        }
+        // Clamp repeats to iters
+        repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
+        mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
+
+        // Store results
+        DYNAMIC_STORE_EXPAND(DYNAMIC_STORE_RESULTS_CMP)
+    }
+#pragma GCC ivdep
+    // Clamp repeats to iters
+    for (pi = 0; pi < num_pixels; ++pi) {
+        buffer[trans_pixels[pi]] = std::min(buffer[trans_pixels[pi]], iters);
+    }
+#endif  // POOLING_ENABLED
     NVTX_RANGE_END()
 #endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
     NVTX_RANGE_START(partial_mandelbrot_pixels)
