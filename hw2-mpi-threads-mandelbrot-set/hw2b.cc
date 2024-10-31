@@ -493,6 +493,15 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             done_mask |= 1 << i;                                                           \
         }                                                                                  \
     }  // DYNAMIC_STORE_RESULTS_CMP
+#define STORE_EXPAND(F) \
+    F(0);               \
+    F(1);               \
+    F(2);               \
+    F(3);               \
+    F(4);               \
+    F(5);               \
+    F(6);               \
+    F(7);  // STORE_EXPAND
     if (mini_iters * 10 >= iters) {
         // Static scheduling
         for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
@@ -508,14 +517,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             }
 
             // Store results
-            STATIC_STORE_RESULTS(0)
-            STATIC_STORE_RESULTS(1)
-            STATIC_STORE_RESULTS(2)
-            STATIC_STORE_RESULTS(3)
-            STATIC_STORE_RESULTS(4)
-            STATIC_STORE_RESULTS(5)
-            STATIC_STORE_RESULTS(6)
-            STATIC_STORE_RESULTS(7)
+            STORE_EXPAND(STATIC_STORE_RESULTS)
         }
     } else if (pi + vec_8_size - 1 < num_pixels) {
         // Dynamic scheduling
@@ -540,14 +542,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & 0xFF;
 
             // Store results
-            DYNAMIC_STORE_RESULTS(0)
-            DYNAMIC_STORE_RESULTS(1)
-            DYNAMIC_STORE_RESULTS(2)
-            DYNAMIC_STORE_RESULTS(3)
-            DYNAMIC_STORE_RESULTS(4)
-            DYNAMIC_STORE_RESULTS(5)
-            DYNAMIC_STORE_RESULTS(6)
-            DYNAMIC_STORE_RESULTS(7)
+            STORE_EXPAND(DYNAMIC_STORE_RESULTS)
         }
         while (done_mask != 0xFF) {
             // Initialize values for mini iterations done entries
@@ -563,14 +558,7 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
 
             // Store results
-            DYNAMIC_STORE_RESULTS_CMP(0)
-            DYNAMIC_STORE_RESULTS_CMP(1)
-            DYNAMIC_STORE_RESULTS_CMP(2)
-            DYNAMIC_STORE_RESULTS_CMP(3)
-            DYNAMIC_STORE_RESULTS_CMP(4)
-            DYNAMIC_STORE_RESULTS_CMP(5)
-            DYNAMIC_STORE_RESULTS_CMP(6)
-            DYNAMIC_STORE_RESULTS_CMP(7)
+            STORE_EXPAND(DYNAMIC_STORE_RESULTS_CMP)
         }
 #pragma GCC ivdep
         // Clamp repeats to iters
