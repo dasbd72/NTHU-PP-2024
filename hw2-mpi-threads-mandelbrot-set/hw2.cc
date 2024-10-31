@@ -236,6 +236,9 @@ void Solver::mandelbrot() {
     pixels_done = (char*)malloc(width * height * sizeof(char));
     memset(pixels_done, 0, width * height * sizeof(char));
     buffer = (int*)malloc(width * height * sizeof(int));
+    for (int i = 0; i < width * height; i++) {
+        buffer[i] = iters;
+    }
     image = (png_bytep)malloc(height * width * 3);
 
     // Create a thread to write PNG
@@ -275,7 +278,9 @@ void Solver::mandelbrot_mpi() {
     pivots[world_size] = width * height;
     // allocate memory for image
     buffer = (int*)malloc(width * height * sizeof(int));
-    memset(buffer, 0, width * height * sizeof(int));
+    for (int i = 0; i < width * height; i++) {
+        buffer[i] = iters;
+    }
     image = (png_bytep)malloc(height * width * 3 * sizeof(png_byte));
     memset(image, 0, height * width * 3);
     if (world_rank == 0) {
@@ -470,15 +475,24 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
     vec_y = _mm512_mask_mov_pd(vec_y, mini_done_mask, vec_8_0);                      \
     vec_y_sq = _mm512_mask_mov_pd(vec_y_sq, mini_done_mask, vec_8_0);                \
     length_valid_mask |= mini_done_mask;  // DYNAMIC_INITIALIZATION
-#define DYNAMIC_STORE_RESULTS(i)                                                       \
-    if (mini_done_mask & (1 << i)) {                                                   \
-        buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i); \
-        if (pi < num_pixels) {                                                         \
-            vec_p = _mm256_insert_epi32(vec_p, trans_pixels[pi++], i);                 \
-        } else {                                                                       \
-            done_mask |= 1 << i;                                                       \
-        }                                                                              \
+#define DYNAMIC_STORE_RESULTS(i)                                                           \
+    if (mini_done_mask & (1 << i)) {                                                       \
+        if (~length_valid_mask & (1 << i)) {                                               \
+            buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i); \
+        }                                                                                  \
+        vec_p = _mm256_insert_epi32(vec_p, trans_pixels[pi++], i);                         \
     }  // DYNAMIC_STORE_RESULTS
+#define DYNAMIC_STORE_RESULTS_CMP(i)                                                       \
+    if (mini_done_mask & (1 << i)) {                                                       \
+        if (~length_valid_mask & (1 << i)) {                                               \
+            buffer[_mm256_extract_epi32(vec_p, i)] = _mm256_extract_epi32(vec_repeats, i); \
+        }                                                                                  \
+        if (pi < num_pixels) {                                                             \
+            vec_p = _mm256_insert_epi32(vec_p, trans_pixels[pi++], i);                     \
+        } else {                                                                           \
+            done_mask |= 1 << i;                                                           \
+        }                                                                                  \
+    }  // DYNAMIC_STORE_RESULTS_CMP
     if (mini_iters * 10 >= iters) {
         // Static scheduling
         for (; pi + vec_8_size - 1 < num_pixels; pi += vec_8_size) {
@@ -512,6 +526,29 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
         length_valid_mask = 0xFF;
         mini_done_mask = 0xFF;
         done_mask = 0x0;
+        while (pi < num_pixels - vec_8_size) {
+            // Initialize values for mini iterations done entries
+            // Calculate pixel coordinates
+            PIXEL_COORDINATES()
+            // Initialize iteration variables & masks
+            DYNAMIC_INITIALIZATION()
+            for (int r = 0; r < mini_iters && length_valid_mask; r++) {
+                INNER_LOOP_COMPUTATION()
+            }
+            // Clamp repeats to iters
+            repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
+            mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & 0xFF;
+
+            // Store results
+            DYNAMIC_STORE_RESULTS(0)
+            DYNAMIC_STORE_RESULTS(1)
+            DYNAMIC_STORE_RESULTS(2)
+            DYNAMIC_STORE_RESULTS(3)
+            DYNAMIC_STORE_RESULTS(4)
+            DYNAMIC_STORE_RESULTS(5)
+            DYNAMIC_STORE_RESULTS(6)
+            DYNAMIC_STORE_RESULTS(7)
+        }
         while (done_mask != 0xFF) {
             // Initialize values for mini iterations done entries
             // Calculate pixel coordinates
@@ -523,18 +560,22 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
             }
             // Clamp repeats to iters
             repeats_exceed_mask = _mm256_cmpge_epi32_mask(vec_repeats, vec_8_iters_epi32);
-            vec_repeats = _mm256_mask_mov_epi32(vec_repeats, repeats_exceed_mask, vec_8_iters_epi32);
             mini_done_mask = (~length_valid_mask | repeats_exceed_mask) & ~done_mask & 0xFF;
 
             // Store results
-            DYNAMIC_STORE_RESULTS(0)
-            DYNAMIC_STORE_RESULTS(1)
-            DYNAMIC_STORE_RESULTS(2)
-            DYNAMIC_STORE_RESULTS(3)
-            DYNAMIC_STORE_RESULTS(4)
-            DYNAMIC_STORE_RESULTS(5)
-            DYNAMIC_STORE_RESULTS(6)
-            DYNAMIC_STORE_RESULTS(7)
+            DYNAMIC_STORE_RESULTS_CMP(0)
+            DYNAMIC_STORE_RESULTS_CMP(1)
+            DYNAMIC_STORE_RESULTS_CMP(2)
+            DYNAMIC_STORE_RESULTS_CMP(3)
+            DYNAMIC_STORE_RESULTS_CMP(4)
+            DYNAMIC_STORE_RESULTS_CMP(5)
+            DYNAMIC_STORE_RESULTS_CMP(6)
+            DYNAMIC_STORE_RESULTS_CMP(7)
+        }
+#pragma GCC ivdep
+        // Clamp repeats to iters
+        for (pi = 0; pi < num_pixels; ++pi) {
+            buffer[trans_pixels[pi]] = std::min(buffer[trans_pixels[pi]], iters);
         }
     }
     NVTX_RANGE_END()
