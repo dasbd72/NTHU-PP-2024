@@ -85,14 +85,14 @@ class Solver {
 #endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
 
     png_bytep pm_image;
-    int* pm_pixels;
-    char* pm_pixels_done;
+    int* pm_tasks;
+    char* pm_tasks_done;
     int* pm_buffer;
     int pm_num_threads;
     int pm_batch_size;
-    int pm_start_pixel;
-    int pm_end_pixel;
-    int pm_shared_pixel;
+    int pm_start_task;
+    int pm_end_task;
+    int pm_shared_task;
 #if MULTITHREADED == 1
     pthread_mutex_t pm_mutex;
 #endif  // MULTITHREADED == 1
@@ -102,14 +102,14 @@ class Solver {
 #ifdef MPI_ENABLED
     void mandelbrot_mpi();
 #endif  // MPI_ENABLED
-    void partial_mandelbrot(png_bytep image, int* pixels, char* pixels_done, int num_pixels, int* buffer);
+    void partial_mandelbrot(png_bytep image, int* tasks, char* tasks_done, int num_tasks, int* buffer);
 #if MULTITHREADED == 1
     static void* pthreads_partial_mandelbrot_thread(void* arg);
 #endif  // MULTITHREADED == 1
     void partial_mandelbrot_thread();
-    void partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer);
+    void partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* buffer);
 
-    void pixels_to_image_single_thread(png_bytep image, int* pixels, char* pixels_done, int num_pixels, const int* buffer) const;
+    void pixels_to_image_single_thread(png_bytep image, int* tasks, char* tasks_done, int num_tasks, const int* buffer) const;
     static void* pthreads_write_png_controller_thread(void* arg);
     void write_png_controller_thread();
     void write_png_init();
@@ -223,18 +223,20 @@ void Solver::random_choices(int* buffer, int buffer_size, int seed, int chunk_si
 }
 
 void Solver::mandelbrot() {
-    int *pixels, *buffer;
-    char* pixels_done;
+    int *tasks, *buffer;
+    int task_size;
+    char* tasks_done;
     png_bytep image;
     pthread_t thread_png;
 
     // allocate memory for image
-    pixels = (int*)malloc(width * height * sizeof(int));
-    for (int i = 0; i < width * height; i++) {
-        pixels[i] = i;
+    task_size = width * height;
+    tasks = (int*)malloc(task_size * sizeof(int));
+    for (int i = 0; i < task_size; i++) {
+        tasks[i] = i;
     }
-    pixels_done = (char*)malloc(width * height * sizeof(char));
-    memset(pixels_done, 0, width * height * sizeof(char));
+    tasks_done = (char*)malloc(task_size * sizeof(char));
+    memset(tasks_done, 0, task_size * sizeof(char));
     buffer = (int*)malloc(width * height * sizeof(int));
     for (int i = 0; i < width * height; i++) {
         buffer[i] = iters;
@@ -246,14 +248,15 @@ void Solver::mandelbrot() {
 
     // compute partial mandelbrot set
     NVTX_RANGE_START(partial_mandelbrot)
-    partial_mandelbrot(image, pixels, pixels_done, width * height, buffer);
+    partial_mandelbrot(image, tasks, tasks_done, task_size, buffer);
     NVTX_RANGE_END()
 
     pthread_join(thread_png, NULL);
 #ifndef NO_FINALIZE
     write_png_cleanup();
-    free(pixels);
+    free(tasks);
     free(buffer);
+    free(tasks_done);
     free(image);
 #endif  // NO_FINALIZE
 }
@@ -261,21 +264,23 @@ void Solver::mandelbrot() {
 #ifdef MPI_ENABLED
 void Solver::mandelbrot_mpi() {
     int num_procs;
-    int *pixels, *buffer;
-    int pivots[max_num_procs + 1];
-    int pixels_per_proc;
+    int *tasks, *buffer;
+    int task_size;
+    int task_pivots[max_num_procs + 1];
+    int tasks_per_proc;
     png_bytep agg_image = NULL, image;
 
     // setup tasks
     num_procs = world_size;
-    pixels = (int*)malloc(width * height * sizeof(int));
-    random_choices(pixels, width * height, 42, 2000);
-    pixels_per_proc = std::ceil((double)width * height / num_procs);
-    pivots[0] = 0;
+    task_size = width * height;
+    tasks = (int*)malloc(task_size * sizeof(int));
+    random_choices(tasks, task_size, 42, 2000);
+    tasks_per_proc = std::ceil((double)task_size / num_procs);
+    task_pivots[0] = 0;
     for (int i = 1; i < world_size; i++) {
-        pivots[i] = std::min(pixels_per_proc + pivots[i - 1], width * height);
+        task_pivots[i] = std::min(tasks_per_proc + task_pivots[i - 1], task_size);
     }
-    pivots[world_size] = width * height;
+    task_pivots[world_size] = task_size;
     // allocate memory for image
     buffer = (int*)malloc(width * height * sizeof(int));
     for (int i = 0; i < width * height; i++) {
@@ -288,9 +293,9 @@ void Solver::mandelbrot_mpi() {
     }
 
     // compute partial mandelbrot set
-    if (pivots[world_rank + 1] - pivots[world_rank] > 0) {
+    if (task_pivots[world_rank + 1] - task_pivots[world_rank] > 0) {
         NVTX_RANGE_START(partial_mandelbrot)
-        partial_mandelbrot(image, pixels + pivots[world_rank], NULL, pivots[world_rank + 1] - pivots[world_rank], buffer);
+        partial_mandelbrot(image, tasks + task_pivots[world_rank], NULL, task_pivots[world_rank + 1] - task_pivots[world_rank], buffer);
         NVTX_RANGE_END()
     }
 
@@ -306,7 +311,7 @@ void Solver::mandelbrot_mpi() {
     }
 #ifndef NO_FINALIZE
     write_png_cleanup();
-    free(pixels);
+    free(tasks);
     free(buffer);
     free(image);
     if (world_rank == 0) {
@@ -316,10 +321,10 @@ void Solver::mandelbrot_mpi() {
 }
 #endif  // MPI_ENABLED
 
-void Solver::partial_mandelbrot(png_bytep image, int* pixels, char* pixels_done, int num_pixels, int* buffer) {
+void Solver::partial_mandelbrot(png_bytep image, int* tasks, char* tasks_done, int num_tasks, int* buffer) {
     const int num_threads = num_cpus;
 #if MULTITHREADED == 1 || MULTITHREADED == 2
-    const int batch_size = std::min(width * height >= 10000000 ? 2048 : 512, (int)std::ceil((double)width * height / num_threads));
+    const int batch_size = std::min(num_tasks >= 10000000 ? 2048 : 512, (int)std::ceil((double)num_tasks / num_threads));
 #endif  // MULTITHREADED == 1 || MULTITHREADED == 2
 
     // Set up shared data
@@ -330,11 +335,11 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, char* pixels_done,
 #endif  // MULTITHREADED == 1
         pm_num_threads = num_threads;
         pm_batch_size = batch_size;
-        pm_start_pixel = 0;
-        pm_pixels = pixels;
-        pm_pixels_done = pixels_done;
-        pm_end_pixel = num_pixels;
-        pm_shared_pixel = 0;
+        pm_start_task = 0;
+        pm_tasks = tasks;
+        pm_tasks_done = tasks_done;
+        pm_end_task = num_tasks;
+        pm_shared_task = 0;
         pm_buffer = buffer;
         pm_image = image;
 #if MULTITHREADED == 1
@@ -354,12 +359,12 @@ void Solver::partial_mandelbrot(png_bytep image, int* pixels, char* pixels_done,
             partial_mandelbrot_thread();
         }
 #else
-        partial_mandelbrot_single_thread(pixels, num_pixels, buffer);
-        pixels_to_image_single_thread(image, pixels, pixels_done, num_pixels, buffer);
+        partial_mandelbrot_single_thread(tasks, num_tasks, buffer);
+        pixels_to_image_single_thread(image, tasks, tasks_done, num_tasks, buffer);
 #endif  // MULTITHREADED
     } else {
-        partial_mandelbrot_single_thread(pixels, num_pixels, buffer);
-        pixels_to_image_single_thread(image, pixels, pixels_done, num_pixels, buffer);
+        partial_mandelbrot_single_thread(tasks, num_tasks, buffer);
+        pixels_to_image_single_thread(image, tasks, tasks_done, num_tasks, buffer);
     }
 }
 
@@ -374,8 +379,8 @@ void* Solver::pthreads_partial_mandelbrot_thread(void* arg) {
 void Solver::partial_mandelbrot_thread() {
     NVTX_RANGE_START(thread)
     while (true) {
-        int curr_start_pixel;
-        int curr_end_pixel;
+        int curr_start_task;
+        int curr_end_task;
         NVTX_RANGE_START(thread_critical)
 #if MULTITHREADED == 2
 #pragma omp critical
@@ -384,29 +389,31 @@ void Solver::partial_mandelbrot_thread() {
 #if MULTITHREADED == 1
             pthread_mutex_lock(&pm_mutex);
 #endif  // MULTITHREADED == 1
-            curr_start_pixel = pm_shared_pixel;
-            pm_shared_pixel += pm_batch_size;
+            curr_start_task = pm_shared_task;
+            pm_shared_task += pm_batch_size;
 #if MULTITHREADED == 1
             pthread_mutex_unlock(&pm_mutex);
 #endif  // MULTITHREADED == 1
         }
         NVTX_RANGE_END()
-        if (curr_start_pixel >= pm_end_pixel) {
+        if (curr_start_task >= pm_end_task) {
             break;
         }
-        curr_end_pixel = std::min(curr_start_pixel + pm_batch_size, pm_end_pixel);
+        curr_end_task = std::min(curr_start_task + pm_batch_size, pm_end_task);
         NVTX_RANGE_START(partial_mandelbrot_single_thread)
-        partial_mandelbrot_single_thread(pm_pixels + curr_start_pixel, curr_end_pixel - curr_start_pixel, pm_buffer);
+        partial_mandelbrot_single_thread(pm_tasks + curr_start_task, curr_end_task - curr_start_task, pm_buffer);
         NVTX_RANGE_END()
         NVTX_RANGE_START(pixels_to_image_single_thread)
-        pixels_to_image_single_thread(pm_image, pm_pixels + curr_start_pixel, pm_pixels_done, curr_end_pixel - curr_start_pixel, pm_buffer);
+        pixels_to_image_single_thread(pm_image, pm_tasks + curr_start_task, pm_tasks_done, curr_end_task - curr_start_task, pm_buffer);
         NVTX_RANGE_END()
     }
     NVTX_RANGE_END()
 }
 
-void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* buffer) {
+void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* buffer) {
     NVTX_RANGE_START(partial_mandelbrot_pixel_translation)
+    int* pixels = tasks;
+    int num_pixels = num_tasks;
     int* trans_pixels = (int*)malloc(num_pixels * sizeof(int));
 #pragma GCC ivdep
     for (int i = 0; i < num_pixels; i++) {
@@ -598,7 +605,10 @@ void Solver::partial_mandelbrot_single_thread(int* pixels, int num_pixels, int* 
 /*
     A function to fill rows of the PNG image with a single thread given a range of pixels.
  */
-void Solver::pixels_to_image_single_thread(png_bytep image, int* pixels, char* pixels_done, int num_pixels, const int* buffer) const {
+void Solver::pixels_to_image_single_thread(png_bytep image, int* tasks, char* tasks_done, int num_tasks, const int* buffer) const {
+    int* pixels = tasks;
+    int num_pixels = num_tasks;
+    char* pixels_done = tasks_done;
     for (int pi = 0; pi < num_pixels; ++pi) {
         int pixel = pixels[pi];
         int y = pixel / width;
@@ -629,17 +639,19 @@ void* Solver::pthreads_write_png_controller_thread(void* arg) {
 }
 
 void Solver::write_png_controller_thread() {
-    int pi = 0;
+    int i = 0;
+    int task_size = width * height;
+    char* pixels_done = pm_tasks_done;
     write_png_init();
     png_set_flush(png_ptr, 1);
-    while (pi < width * height) {
-        if (pm_pixels_done[pi] == 0) {
+    while (i < task_size) {
+        if (pixels_done[i] == 0) {
             usleep(100);
             continue;
         }
-        pi++;
-        if (pi % width == 0) {
-            write_png_rows(pm_image, pi / width - 1, 1);
+        i++;
+        if (i % width == 0) {
+            write_png_rows(pm_image, i / width - 1, 1);
         }
     }
     write_png_end();
