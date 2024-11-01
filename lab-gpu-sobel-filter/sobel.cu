@@ -162,50 +162,16 @@ void write_png_destroy(write_png_t* data) {
 }
 
 __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned height_pad, unsigned width_pad) {
+#ifdef SOBEL_SMEM_ENABLED
+    int txy;
+    __shared__ unsigned char shared_s[3 * SHARED_X * SHARED_Y];
+    __shared__ short shared_mask[MASK_N][MASK_X][MASK_Y];
+#endif  // SOBEL_SMEM_ENABLED
     int x, y, i, v, u;
     short color[3];
     float val[3], total[3] = {0.0};
 
-    x = blockIdx.x * blockDim.x + threadIdx.x;
-    y = blockIdx.y * blockDim.y + threadIdx.y;
-#pragma unroll 2
-    for (i = 0; i < MASK_N; ++i) {
-        val[2] = 0.0;
-        val[1] = 0.0;
-        val[0] = 0.0;
-
-#pragma unroll 5
-        for (v = 0; v < MASK_Y; ++v) {
-#pragma unroll 5
-            for (u = 0; u < MASK_X; ++u) {
-                color[2] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
-                color[1] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
-                color[0] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
-                val[2] += color[2] * mask[i][u][v];
-                val[1] += color[1] * mask[i][u][v];
-                val[0] += color[0] * mask[i][u][v];
-            }
-        }
-
-        total[2] += val[2] * val[2];
-        total[1] += val[1] * val[1];
-        total[0] += val[0] * val[0];
-    }
-    total[2] = sqrtf(total[2]) / SCALE;
-    total[1] = sqrtf(total[1]) / SCALE;
-    total[0] = sqrtf(total[0]) / SCALE;
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_8BIT(total[2]);
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_8BIT(total[1]);
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_8BIT(total[0]);
-}
-
-__global__ void sobel_smem(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned height_pad, unsigned width_pad) {
-    __shared__ unsigned char shared_s[3 * SHARED_X * SHARED_Y];
-    __shared__ short shared_mask[MASK_N][MASK_X][MASK_Y];
-    int txy, x, y, i, v, u;
-    short color[3];
-    float val[3], total[3] = {0.0};
-
+#ifdef SOBEL_SMEM_ENABLED
     // Set up shared memory
     txy = threadIdx.x * blockDim.y + threadIdx.y;
     // Load source to shared memory
@@ -220,6 +186,7 @@ __global__ void sobel_smem(unsigned char* s, unsigned char* t, unsigned height, 
         shared_mask[txy / (MASK_X * MASK_Y)][txy % (MASK_X * MASK_Y) / MASK_Y][txy % MASK_Y] = mask[txy / (MASK_X * MASK_Y)][txy % (MASK_X * MASK_Y) / MASK_Y][txy % MASK_Y];
     }
     __syncthreads();
+#endif  // SOBEL_SMEM_ENABLED
 
     x = blockIdx.x * blockDim.x + threadIdx.x;
     y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -233,12 +200,21 @@ __global__ void sobel_smem(unsigned char* s, unsigned char* t, unsigned height, 
         for (v = 0; v < MASK_Y; ++v) {
 #pragma unroll 5
             for (u = 0; u < MASK_X; ++u) {
+#ifdef SOBEL_SMEM_ENABLED
                 color[2] = shared_s[3 * (SHARED_X * (threadIdx.y + v) + (threadIdx.x + u)) + 2];
                 color[1] = shared_s[3 * (SHARED_X * (threadIdx.y + v) + (threadIdx.x + u)) + 1];
                 color[0] = shared_s[3 * (SHARED_X * (threadIdx.y + v) + (threadIdx.x + u)) + 0];
                 val[2] += color[2] * shared_mask[i][u][v];
                 val[1] += color[1] * shared_mask[i][u][v];
                 val[0] += color[0] * shared_mask[i][u][v];
+#else
+                color[2] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
+                color[1] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
+                color[0] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
+                val[2] += color[2] * mask[i][u][v];
+                val[1] += color[1] * mask[i][u][v];
+                val[0] += color[0] * mask[i][u][v];
+#endif  // SOBEL_SMEM_ENABLED
             }
         }
 
@@ -287,7 +263,9 @@ int main(int argc, char** argv) {
     NVTX_RANGE_START(allocate);
     host_s = (unsigned char*)malloc(size);
     memset(host_s, 0, size);
+    cudaHostRegister(host_s, size, cudaHostRegisterDefault);
     host_t = (unsigned char*)malloc(size);
+    cudaHostRegister(host_t, size, cudaHostRegisterDefault);
     cudaMalloc(&dev_s, size);
     cudaMalloc(&dev_t, size);
     NVTX_RANGE_END();
