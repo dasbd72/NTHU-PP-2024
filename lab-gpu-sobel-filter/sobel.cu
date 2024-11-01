@@ -35,6 +35,21 @@
     {}
 #endif  // PROFILING
 
+#ifdef SOBEL_PRESCALE
+#define mask_t float
+__constant__ mask_t mask[MASK_N][MASK_X][MASK_Y] = {
+    {{-1.0f / SCALE, -4.0f / SCALE, -6.0f / SCALE, -4.0f / SCALE, -1.0f / SCALE},
+     {-2.0f / SCALE, -8.0f / SCALE, -12.0f / SCALE, -8.0f / SCALE, -2.0f / SCALE},
+     {0.0f / SCALE, 0.0f / SCALE, 0.0f / SCALE, 0.0f / SCALE, 0.0f / SCALE},
+     {2.0f / SCALE, 8.0f / SCALE, 12.0f / SCALE, 8.0f / SCALE, 2.0f / SCALE},
+     {1.0f / SCALE, 4.0f / SCALE, 6.0f / SCALE, 4.0f / SCALE, 1.0f / SCALE}},
+    {{-1.0f / SCALE, -2.0f / SCALE, 0.0f / SCALE, 2.0f / SCALE, 1.0f / SCALE},
+     {-4.0f / SCALE, -8.0f / SCALE, 0.0f / SCALE, 8.0f / SCALE, 4.0f / SCALE},
+     {-6.0f / SCALE, -12.0f / SCALE, 0.0f / SCALE, 12.0f / SCALE, 6.0f / SCALE},
+     {-4.0f / SCALE, -8.0f / SCALE, 0.0f / SCALE, 8.0f / SCALE, 4.0f / SCALE},
+     {-1.0f / SCALE, -2.0f / SCALE, 0.0f / SCALE, 2.0f / SCALE, 1.0f / SCALE}}};
+#else
+#define mask_t short
 __constant__ short mask[MASK_N][MASK_X][MASK_Y] = {
     {{-1, -4, -6, -4, -1},
      {-2, -8, -12, -8, -2},
@@ -46,6 +61,7 @@ __constant__ short mask[MASK_N][MASK_X][MASK_Y] = {
      {-6, -12, 0, 12, 6},
      {-4, -8, 0, 8, 4},
      {-1, -2, 0, 2, 1}}};
+#endif  // SOBEL_PRESCALE
 
 typedef struct read_png_t {
     // Input
@@ -165,10 +181,10 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
 #ifdef SOBEL_SMEM_ENABLED
     int txy;
     __shared__ unsigned char shared_s[3 * SHARED_X * SHARED_Y];
-    __shared__ short shared_mask[MASK_N][MASK_X][MASK_Y];
+    __shared__ mask_t shared_mask[MASK_N][MASK_X][MASK_Y];
 #endif  // SOBEL_SMEM_ENABLED
     int x, y, i, v, u;
-    short color[3];
+    mask_t color[3];
     float val[3], total[3] = {0.0};
 
 #ifdef SOBEL_SMEM_ENABLED
@@ -225,9 +241,15 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
         total[1] += val[1] * val[1];
         total[0] += val[0] * val[0];
     }
+#ifdef SOBEL_PRESCALE
+    total[2] = sqrtf(total[2]);
+    total[1] = sqrtf(total[1]);
+    total[0] = sqrtf(total[0]);
+#else
     total[2] = sqrtf(total[2]) / SCALE;
     total[1] = sqrtf(total[1]) / SCALE;
     total[0] = sqrtf(total[0]) / SCALE;
+#endif  // SOBEL_PRESCALE
     t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_FLOAT2UCHAR(total[2]);
     t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_FLOAT2UCHAR(total[1]);
     t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_FLOAT2UCHAR(total[0]);

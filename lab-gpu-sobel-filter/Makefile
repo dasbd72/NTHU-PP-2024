@@ -1,5 +1,5 @@
 NVCC = nvcc 
-NVCCFLAGS = -O3 -std=c++11 -Xptxas=-v -arch=sm_61 --use_fast_math -DSOBEL_SMEM_ENABLED
+NVCCFLAGS = -O3 -std=c++11 -Xptxas=-v -arch=sm_61 --use_fast_math -DSOBEL_SMEM_ENABLED -DSOBEL_PRESCALE
 
 ifeq ($(PROFILING), 1)
 	NVCCFLAGS += -DPROFILING
