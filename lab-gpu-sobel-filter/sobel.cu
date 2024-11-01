@@ -293,9 +293,10 @@ int main(int argc, char** argv) {
     NVTX_RANGE_END();
 
     read_png_rows(&read_data, host_s, 0, height);
-    cudaMemcpyAsync(dev_s, host_s, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_s, host_s, size, cudaMemcpyHostToDevice);
     sobel<<<grid, blk>>>(dev_s, dev_t, height, width, height_pad, width_pad);
     cudaMemcpyAsync(host_t, dev_t, size, cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
     write_png_rows(&write_data, host_t, 0, write_data.height);
 
     read_png_end(&read_data);
