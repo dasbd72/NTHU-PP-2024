@@ -17,6 +17,7 @@
 #define START_Y (MASK_Y / 2)
 #define BLOCK_X 16
 #define BLOCK_Y 8
+#define OUTER_BLOCK_Y 4
 #define SHARED_X (BLOCK_X + MASK_ADJ_X)
 #define SHARED_Y (BLOCK_Y + MASK_ADJ_Y)
 
@@ -94,7 +95,7 @@ void read_png_init(read_png_t* data) {
     png_read_update_info(data->png_ptr, data->info_ptr);
     unsigned channels = (int)png_get_channels(data->png_ptr, data->info_ptr);
     assert(channels == 3);
-    data->height_pad = (data->height % BLOCK_Y == 0) ? data->height : (data->height / BLOCK_Y + 1) * BLOCK_Y;
+    data->height_pad = (data->height % (BLOCK_Y * OUTER_BLOCK_Y) == 0) ? data->height : (data->height / (BLOCK_Y * OUTER_BLOCK_Y) + 1) * (BLOCK_Y * OUTER_BLOCK_Y);
     data->width_pad = (data->width % BLOCK_X == 0) ? data->width : (data->width / BLOCK_X + 1) * BLOCK_X;
     data->size = 3 * (data->width_pad + MASK_ADJ_X) * (data->height_pad + MASK_ADJ_Y) * sizeof(unsigned char);
     NVTX_RANGE_END();
@@ -245,6 +246,7 @@ int main(int argc, char** argv) {
     unsigned char* dev_s = NULL;
     unsigned char* dev_t = NULL;
     dim3 blk, grid;
+    cudaStream_t streams[OUTER_BLOCK_Y];
 
     // Get image info and initialize output image
     read_data.filename = input_filename;
@@ -258,24 +260,31 @@ int main(int argc, char** argv) {
     write_png_init(&write_data);
 
     blk = dim3(BLOCK_X, BLOCK_Y);
-    grid = dim3(width_pad / BLOCK_X, height_pad / BLOCK_Y);
+    grid = dim3(width_pad / BLOCK_X, (height_pad / OUTER_BLOCK_Y) / BLOCK_Y);
 
     NVTX_RANGE_START(allocate);
     host_s = (unsigned char*)malloc(size);
     memset(host_s, 0, size);
     cudaHostRegister(host_s, size, cudaHostRegisterDefault);
     host_t = (unsigned char*)malloc(size);
-    cudaHostRegister(host_t, size, cudaHostRegisterDefault);
     cudaMalloc(&dev_s, size);
     cudaMalloc(&dev_t, size);
     NVTX_RANGE_END();
 
-    read_png_rows(&read_data, host_s, 0, height);
-    cudaMemcpy(dev_s, host_s, size, cudaMemcpyHostToDevice);
-    sobel<<<grid, blk>>>(dev_s, dev_t, height, width, height_pad, width_pad);
-    cudaMemcpyAsync(host_t, dev_t, size, cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
-    write_png_rows(&write_data, host_t, 0, write_data.height);
+    for (int i = 0; i < OUTER_BLOCK_Y; i++) {
+        int h = i * height_pad / OUTER_BLOCK_Y;
+        cudaStreamCreate(&streams[i]);
+        read_png_rows(&read_data, host_s, h, std::min(height_pad / OUTER_BLOCK_Y, height - h));
+        cudaMemcpyAsync(dev_s + h * width_pad * 3, host_s + h * width_pad * 3, size / OUTER_BLOCK_Y, cudaMemcpyHostToDevice, streams[i]);
+        sobel<<<grid, blk, 0, streams[i]>>>(dev_s + h * width_pad * 3, dev_t + h * width_pad * 3, height, width, height_pad, width_pad);
+        cudaMemcpyAsync(host_t + h * width_pad * 3, dev_t + h * width_pad * 3, size / OUTER_BLOCK_Y, cudaMemcpyDeviceToHost, streams[i]);
+    }
+    cudaHostRegister(host_t, size, cudaHostRegisterDefault);
+    for (int i = 0; i < OUTER_BLOCK_Y; i++) {
+        int h = i * height_pad / OUTER_BLOCK_Y;
+        cudaStreamSynchronize(streams[i]);
+        write_png_rows(&write_data, host_t, h, std::min(height_pad / OUTER_BLOCK_Y, height - h));
+    }
 
     read_png_end(&read_data);
     write_png_end(&write_data);
