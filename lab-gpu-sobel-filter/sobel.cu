@@ -182,6 +182,7 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     int txy;
     __shared__ unsigned char shared_s[3 * SHARED_X * SHARED_Y];
     __shared__ mask_t shared_mask[MASK_N][MASK_X][MASK_Y];
+    int sx, sy;
 #endif  // SOBEL_SMEM_ENABLED
     int x, y, i, v, u;
     mask_t color[3];
@@ -207,6 +208,10 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     __syncthreads();
 #endif  // SOBEL_SMEM_ENABLED
 
+#ifdef SOBEL_SMEM_ENABLED
+    sx = threadIdx.x;
+    sy = threadIdx.y;
+#endif  // SOBEL_SMEM_ENABLED
     x = blockIdx.x * blockDim.x + threadIdx.x;
     y = blockIdx.y * blockDim.y + threadIdx.y;
 #pragma unroll 2
@@ -220,9 +225,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
 #pragma unroll 5
             for (u = 0; u < MASK_X; ++u) {
 #ifdef SOBEL_SMEM_ENABLED
-                color[2] = shared_s[3 * (SHARED_X * (threadIdx.y + v) + (threadIdx.x + u)) + 2];
-                color[1] = shared_s[3 * (SHARED_X * (threadIdx.y + v) + (threadIdx.x + u)) + 1];
-                color[0] = shared_s[3 * (SHARED_X * (threadIdx.y + v) + (threadIdx.x + u)) + 0];
+                color[2] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 2];
+                color[1] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 1];
+                color[0] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 0];
                 val[2] += color[2] * shared_mask[i][u][v];
                 val[1] += color[1] * shared_mask[i][u][v];
                 val[0] += color[0] * shared_mask[i][u][v];
