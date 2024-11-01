@@ -183,7 +183,10 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     }
     // Load mask to shared memory
     if (txy < MASK_N * (MASK_X * MASK_Y)) {
-        shared_mask[txy / (MASK_X * MASK_Y)][txy % (MASK_X * MASK_Y) / MASK_Y][txy % MASK_Y] = mask[txy / (MASK_X * MASK_Y)][txy % (MASK_X * MASK_Y) / MASK_Y][txy % MASK_Y];
+        int n = txy / (MASK_X * MASK_Y);
+        int row = (txy % (MASK_X * MASK_Y)) / MASK_Y;
+        int col = txy % MASK_Y;
+        shared_mask[n][row][col] = mask[n][row][col];
     }
     __syncthreads();
 #endif  // SOBEL_SMEM_ENABLED
