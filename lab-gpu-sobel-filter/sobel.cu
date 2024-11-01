@@ -20,7 +20,7 @@
 #define SHARED_X (BLOCK_X + MASK_ADJ_X)
 #define SHARED_Y (BLOCK_Y + MASK_ADJ_Y)
 
-#define CLAMP_8BIT(x) (x > 255.0 ? 255 : x)
+#define CLAMP_FLOAT2UCHAR(x) (x > 255.0 ? (unsigned char)255U : (unsigned char)x)
 
 #ifdef PROFILING
 #include <nvtx3/nvtx3.hpp>
@@ -225,9 +225,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     total[2] = sqrtf(total[2]) / SCALE;
     total[1] = sqrtf(total[1]) / SCALE;
     total[0] = sqrtf(total[0]) / SCALE;
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_8BIT(total[2]);
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_8BIT(total[1]);
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_8BIT(total[0]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_FLOAT2UCHAR(total[2]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_FLOAT2UCHAR(total[1]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_FLOAT2UCHAR(total[0]);
 }
 
 int main(int argc, char** argv) {
