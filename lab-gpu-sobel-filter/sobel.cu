@@ -178,8 +178,8 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     for (i = txy; i < 3 * SHARED_X * SHARED_Y; i += blockDim.x * blockDim.y) {
         int row = i / (3 * SHARED_X);
         int col = (i % (3 * SHARED_X)) / 3;
-        int color = i % 3;
-        shared_s[i] = s[3 * ((width_pad + MASK_ADJ_X) * (blockIdx.y * blockDim.y + row) + (blockIdx.x * blockDim.x + col)) + color];
+        int offset = i % 3;
+        shared_s[i] = s[3 * ((width_pad + MASK_ADJ_X) * (blockIdx.y * blockDim.y + row) + (blockIdx.x * blockDim.x + col)) + offset];
     }
     // Load mask to shared memory
     if (txy < MASK_N * (MASK_X * MASK_Y)) {
