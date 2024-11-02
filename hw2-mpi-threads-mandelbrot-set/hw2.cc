@@ -37,9 +37,6 @@
 
 const int max_num_procs = 48;
 const int max_num_cpus = 12;
-const long long min_tasks_per_process = (long long)500 * 1920 * 1080;
-const int min_batch_size_per_thread = 1000;
-const int max_buffer_size = max_num_cpus * min_batch_size_per_thread * 100;
 
 class Solver {
    public:
@@ -175,7 +172,7 @@ int Solver::solve(int argc, char** argv) {
 #endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
 
 #ifdef MPI_ENABLED
-    if (world_size == 1 || (long long)iters * width * height <= min_tasks_per_process) {
+    if (world_size == 1) {
         if (world_rank == 0) {
             mandelbrot();
         }
