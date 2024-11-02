@@ -12,6 +12,7 @@ class Args:
     testcase_dir = "testcases"
     nodes = None
     procs = None
+    nodelist = None
     profile = "nsys"
     report_name = None
     testcase = None
@@ -37,6 +38,9 @@ def parse_arguments() -> Args:
     )
     parser.add_argument("--nodes", "-N", type=int, help="Number of nodes")
     parser.add_argument("--procs", "-n", type=int, help="Number of processors")
+    parser.add_argument(
+        "--nodelist", "-w", type=str, help="Example: apollo[40,41,42]"
+    )
     parser.add_argument(
         "--profile",
         type=str,
@@ -157,6 +161,8 @@ def clean_old_output(outputs_out):
 def execute_program(tc, testcase_in, outputs_out, args: Args):
     """Builds and executes the command to run the program."""
     cmd_srun = f"srun -N {tc['nodes']} -n {tc['procs']}"
+    if args.nodelist is not None:
+        cmd_srun += f" -w {args.nodelist}"
     cmd_prog = f"./hw1 {tc['n']} {testcase_in} {outputs_out}"
 
     if args.profile == "nsys":
