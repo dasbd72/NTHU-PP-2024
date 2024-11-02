@@ -13,7 +13,7 @@ parser.add_argument(
     "-v",
     "--version",
     type=str,
-    choices=["random", "reversed", "sorted"],
+    choices=["random", "reversed", "sorted", "skewed"],
     default="random",
 )
 parser.add_argument("testcase", type=str)
@@ -63,4 +63,21 @@ if __name__ == "__main__":
                         struct.pack(
                             f"{size}f", *range(n - i, n - i - size, -1)
                         )
+                    )
+            elif args.version == "skewed":
+                # random in [0, n)
+                # ordered in [n, n + pivot)
+                pivot = int(n * 0.1)
+                for i in tqdm.tqdm(range(0, pivot, batch_size)):
+                    size = min(batch_size, pivot - i)
+                    f.write(
+                        struct.pack(
+                            f"{size}f",
+                            *random.sample(range(n - pivot, n), size),
+                        )
+                    )
+                for i in tqdm.tqdm(range(pivot, n, batch_size)):
+                    size = min(batch_size, n - i)
+                    f.write(
+                        struct.pack(f"{size}f", *range(i + 1, i + 1 + size))
                     )
