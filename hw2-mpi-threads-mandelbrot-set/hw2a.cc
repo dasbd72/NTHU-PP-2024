@@ -28,10 +28,14 @@
     nvtxRangePushA(#arg);
 #define NVTX_RANGE_END() \
     nvtxRangePop();
+#define NVTX_RANGE_FUNC() \
+    NVTX3_FUNC_RANGE()
 #else
 #define NVTX_RANGE_START(arg) \
     {}
 #define NVTX_RANGE_END() \
+    {}
+#define NVTX_RANGE_FUNC() \
     {}
 #endif  // PROFILING
 
@@ -301,7 +305,9 @@ void Solver::mandelbrot_mpi() {
         NVTX_RANGE_END()
     }
 
+    NVTX_RANGE_START(mpi_reduce)
     MPI_Reduce(image, agg_image, width * height * 3, MPI_UNSIGNED_CHAR, MPI_SUM, 0, MPI_COMM_WORLD);
+    NVTX_RANGE_END()
 
     // draw and cleanup
     if (world_rank == 0) {
@@ -402,17 +408,14 @@ void Solver::partial_mandelbrot_thread() {
             break;
         }
         curr_end_task = std::min(curr_start_task + pm_batch_size, pm_end_task);
-        NVTX_RANGE_START(partial_mandelbrot_single_thread)
         partial_mandelbrot_single_thread(pm_tasks + curr_start_task, curr_end_task - curr_start_task, pm_buffer);
-        NVTX_RANGE_END()
-        NVTX_RANGE_START(pixels_to_image_single_thread)
         pixels_to_image_single_thread(pm_image, pm_tasks + curr_start_task, pm_tasks_done, curr_end_task - curr_start_task, pm_buffer);
-        NVTX_RANGE_END()
     }
     NVTX_RANGE_END()
 }
 
 void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* buffer) {
+    NVTX_RANGE_FUNC()
     NVTX_RANGE_START(partial_mandelbrot_pixel_translation)
     int* pixels = tasks;
     int num_pixels = num_tasks;
@@ -638,6 +641,7 @@ void Solver::partial_mandelbrot_single_thread(int* tasks, int num_tasks, int* bu
     A function to fill rows of the PNG image with a single thread given a range of pixels.
  */
 void Solver::pixels_to_image_single_thread(png_bytep image, int* tasks, char* tasks_done, int num_tasks, const int* buffer) const {
+    NVTX_RANGE_FUNC()
     int* pixels = tasks;
     int num_pixels = num_tasks;
     char* pixels_done = tasks_done;
