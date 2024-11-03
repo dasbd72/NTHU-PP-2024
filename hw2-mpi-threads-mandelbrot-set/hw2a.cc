@@ -81,6 +81,9 @@ class Solver {
     __m256i vec_8_iters_epi32;
 #endif  // defined(__AVX512F__) && defined(SIMD_ENABLED)
 
+    png_bytep wp_image;
+    char* wp_tasks_done;
+
     png_bytep pm_image;
     int* pm_tasks;
     char* pm_tasks_done;
@@ -241,6 +244,8 @@ void Solver::mandelbrot() {
     image = (png_bytep)malloc(height * width * 3);
 
     // Create a thread to write PNG
+    wp_image = image;
+    wp_tasks_done = tasks_done;
     pthread_create(&thread_png, NULL, pthreads_write_png_controller_thread, (void*)this);
 
     // compute partial mandelbrot set
@@ -668,7 +673,7 @@ void* Solver::pthreads_write_png_controller_thread(void* arg) {
 void Solver::write_png_controller_thread() {
     int i = 0;
     int task_size = width * height;
-    char* pixels_done = pm_tasks_done;
+    char* pixels_done = wp_tasks_done;
     write_png_init();
     png_set_flush(png_ptr, 1);
     while (i < task_size) {
@@ -678,7 +683,7 @@ void Solver::write_png_controller_thread() {
         }
         i++;
         if (i % width == 0) {
-            write_png_rows(pm_image, i / width - 1, 1);
+            write_png_rows(wp_image, i / width - 1, 1);
         }
     }
     write_png_end();
