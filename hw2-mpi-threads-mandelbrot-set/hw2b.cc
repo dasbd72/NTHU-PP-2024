@@ -269,6 +269,7 @@ void Solver::mandelbrot() {
 
 #ifdef MPI_ENABLED
 void Solver::mandelbrot_mpi() {
+    NVTX_RANGE_START(mandelbrot_mpi_setup)
     int num_procs;
     int *tasks, *buffer;
     int task_size;
@@ -297,6 +298,7 @@ void Solver::mandelbrot_mpi() {
     if (world_rank == 0) {
         agg_image = (png_bytep)malloc(height * width * 3 * sizeof(png_byte));
     }
+    NVTX_RANGE_END()
 
     // compute partial mandelbrot set
     if (task_pivots[world_rank + 1] - task_pivots[world_rank] > 0) {
