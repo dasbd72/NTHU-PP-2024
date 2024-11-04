@@ -16,7 +16,7 @@
 #define START_X (MASK_X / 2)
 #define START_Y (MASK_Y / 2)
 #define BLOCK_X 16
-#define BLOCK_Y 8
+#define BLOCK_Y 16
 #define SHARED_X (BLOCK_X + MASK_ADJ_X)
 #define SHARED_Y (BLOCK_Y + MASK_ADJ_Y)
 
@@ -221,9 +221,9 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
         val[2] = 0.0;
 
 #pragma unroll 5
-        for (v = 0; v < MASK_Y; ++v) {
+        for (u = 0; u < MASK_X; ++u) {
 #pragma unroll 5
-            for (u = 0; u < MASK_X; ++u) {
+            for (v = 0; v < MASK_Y; ++v) {
 #ifdef SOBEL_SMEM_ENABLED
                 color[0] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 0];
                 color[1] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 1];
