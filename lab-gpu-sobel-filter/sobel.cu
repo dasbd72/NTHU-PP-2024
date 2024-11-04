@@ -216,48 +216,48 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     y = blockIdx.y * blockDim.y + threadIdx.y;
 #pragma unroll 2
     for (i = 0; i < MASK_N; ++i) {
-        val[2] = 0.0;
-        val[1] = 0.0;
         val[0] = 0.0;
+        val[1] = 0.0;
+        val[2] = 0.0;
 
 #pragma unroll 5
         for (v = 0; v < MASK_Y; ++v) {
 #pragma unroll 5
             for (u = 0; u < MASK_X; ++u) {
 #ifdef SOBEL_SMEM_ENABLED
-                color[2] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 2];
-                color[1] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 1];
                 color[0] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 0];
-                val[2] += color[2] * shared_mask[i][u][v];
-                val[1] += color[1] * shared_mask[i][u][v];
+                color[1] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 1];
+                color[2] = shared_s[3 * (SHARED_X * (sy + v) + (sx + u)) + 2];
                 val[0] += color[0] * shared_mask[i][u][v];
+                val[1] += color[1] * shared_mask[i][u][v];
+                val[2] += color[2] * shared_mask[i][u][v];
 #else
-                color[2] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
-                color[1] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
                 color[0] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 0];
-                val[2] += color[2] * mask[i][u][v];
-                val[1] += color[1] * mask[i][u][v];
+                color[1] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 1];
+                color[2] = s[3 * ((width_pad + MASK_ADJ_X) * (y + v) + (x + u)) + 2];
                 val[0] += color[0] * mask[i][u][v];
+                val[1] += color[1] * mask[i][u][v];
+                val[2] += color[2] * mask[i][u][v];
 #endif  // SOBEL_SMEM_ENABLED
             }
         }
 
-        total[2] += val[2] * val[2];
-        total[1] += val[1] * val[1];
         total[0] += val[0] * val[0];
+        total[1] += val[1] * val[1];
+        total[2] += val[2] * val[2];
     }
 #ifdef SOBEL_PRESCALE
-    total[2] = sqrtf(total[2]);
-    total[1] = sqrtf(total[1]);
     total[0] = sqrtf(total[0]);
+    total[1] = sqrtf(total[1]);
+    total[2] = sqrtf(total[2]);
 #else
-    total[2] = sqrtf(total[2]) / SCALE;
-    total[1] = sqrtf(total[1]) / SCALE;
     total[0] = sqrtf(total[0]) / SCALE;
+    total[1] = sqrtf(total[1]) / SCALE;
+    total[2] = sqrtf(total[2]) / SCALE;
 #endif  // SOBEL_PRESCALE
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_FLOAT2UCHAR(total[2]);
-    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_FLOAT2UCHAR(total[1]);
     t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 0] = CLAMP_FLOAT2UCHAR(total[0]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 1] = CLAMP_FLOAT2UCHAR(total[1]);
+    t[3 * ((width_pad + MASK_ADJ_X) * (y + START_Y) + (x + START_X)) + 2] = CLAMP_FLOAT2UCHAR(total[2]);
 }
 
 int main(int argc, char** argv) {
