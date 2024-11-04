@@ -179,9 +179,9 @@ void write_png_destroy(write_png_t* data) {
 
 __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsigned width, unsigned height_pad, unsigned width_pad) {
 #ifdef SOBEL_SMEM_ENABLED
-    int txy;
     __shared__ unsigned char shared_s[3 * SHARED_X * SHARED_Y];
     __shared__ mask_t shared_mask[MASK_N][MASK_X][MASK_Y];
+    int txy, bs, bx, by;
     int sx, sy;
 #endif  // SOBEL_SMEM_ENABLED
     int x, y, i, v, u;
@@ -189,17 +189,25 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     float val[3], total[3] = {0.0};
 
 #ifdef SOBEL_SMEM_ENABLED
-    // Set up shared memory
-    txy = threadIdx.x * blockDim.y + threadIdx.y;
-    // Load source to shared memory
-    for (i = txy; i < 3 * SHARED_X * SHARED_Y; i += blockDim.x * blockDim.y) {
+    txy = threadIdx.y * blockDim.x + threadIdx.x;
+    bs = blockDim.x * blockDim.y;
+    bx = blockIdx.x * blockDim.x, by = blockIdx.y * blockDim.y;
+    sx = threadIdx.x;
+    sy = threadIdx.y;
+#endif  // SOBEL_SMEM_ENABLED
+    x = blockIdx.x * blockDim.x + threadIdx.x;
+    y = blockIdx.y * blockDim.y + threadIdx.y;
+
+#ifdef SOBEL_SMEM_ENABLED
+    // Load source to shared memory in cooperative manner
+    for (i = txy; i < 3 * SHARED_X * SHARED_Y; i += bs) {
         int row = i / (3 * SHARED_X);
         int col = (i % (3 * SHARED_X)) / 3;
         int offset = i % 3;
-        shared_s[i] = s[3 * ((width_pad + MASK_ADJ_X) * (blockIdx.y * blockDim.y + row) + (blockIdx.x * blockDim.x + col)) + offset];
+        shared_s[i] = s[3 * ((width_pad + MASK_ADJ_X) * (by + row) + (bx + col)) + offset];
     }
     // Load mask to shared memory
-    if (txy < MASK_N * (MASK_X * MASK_Y)) {
+    if (txy < MASK_N * MASK_X * MASK_Y) {
         int n = txy / (MASK_X * MASK_Y);
         int row = (txy % (MASK_X * MASK_Y)) / MASK_Y;
         int col = txy % MASK_Y;
@@ -208,12 +216,6 @@ __global__ void sobel(unsigned char* s, unsigned char* t, unsigned height, unsig
     __syncthreads();
 #endif  // SOBEL_SMEM_ENABLED
 
-#ifdef SOBEL_SMEM_ENABLED
-    sx = threadIdx.x;
-    sy = threadIdx.y;
-#endif  // SOBEL_SMEM_ENABLED
-    x = blockIdx.x * blockDim.x + threadIdx.x;
-    y = blockIdx.y * blockDim.y + threadIdx.y;
 #pragma unroll 2
     for (i = 0; i < MASK_N; ++i) {
         val[0] = 0.0;
