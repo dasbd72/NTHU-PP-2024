@@ -146,7 +146,7 @@ def execute_program(tc: dict, testcase_input_png, outputs_png, args: Args):
         if args.program == "sobel":
             outputs_report = f"nsys-reports/sobel/{report_name}/report"
             os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
-            cmd = f"{cmd_srun} nsys profile -t cuda,nvtx --stats=true -f true -o {outputs_report} {cmd_prog}"
+            cmd = f"{cmd_srun} nsys profile -t cuda,nvtx --stats=true -f true --cuda-memory-usage=true -o {outputs_report} {cmd_prog}"
     else:
         cmd = f"{cmd_srun} {cmd_prog}"
 
