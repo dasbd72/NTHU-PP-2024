@@ -7,7 +7,8 @@ HIPCCFLAGS = -std=c++11 -O3 --offload-arch=gfx90a
 LDFLAGS = -lm
 
 hw3-1: CXXFLAGS += -pthread
-hw3-3: NVFLAGS += -fopenmp
+hw3-2: NVFLAGS += -Xcompiler -fopenmp
+hw3-3: NVFLAGS += -Xcompiler -fopenmp
 hw3-3-amd: HIPCCFLAGS += -fopenmp
 
 EXES = hw3-1 hw3-2 hw3-3
