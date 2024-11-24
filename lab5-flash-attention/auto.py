@@ -32,8 +32,11 @@ def main():
     for batch_size in [1, 16, 32, 64]:
         for seq_len in [128, 1024, 2048]:
             for num_heads in [4, 16, 64]:
-                for emb_dim_mult in [4, 32, 128]:
-                    emb_dim = num_heads * emb_dim_mult
+                for emb_dim in [128, 1024, 2048]:
+                    if emb_dim % num_heads != 0:
+                        continue
+                    if emb_dim / num_heads > 256:
+                        continue
                     for impl in ["Pytorch", "Flash2"]:
                         for causal in [False, True]:
                             output = "benchmark_results/benchmark_result_{:03d}_{:05d}_{:03d}_{:04d}_{}_{}.json".format(
