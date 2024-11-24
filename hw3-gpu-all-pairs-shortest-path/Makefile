@@ -1,8 +1,6 @@
-CC = mpicc
-CXX = mpicxx
 CFLAGS = -O3 -fopenmp
-CXXFLAGS = -std=c++11 -O3 -fopenmp
-NVFLAGS = -std=c++11 -O3 -Xptxas="-v" -arch=sm_61 
+CXXFLAGS = -std=c++11 -O3 -fopenmp -march=native -mtune=native -Wall -Wextra
+NVFLAGS = -std=c++11 -O3 -Xptxas="-v" -arch=sm_61
 HIPCCFLAGS = -std=c++11 -O3 --offload-arch=gfx90a
 LDFLAGS = -lm
 
@@ -24,7 +22,7 @@ seq: seq.cc
 	g++ $(CXXFLAGS) -o $@ $?
 
 hw3-1: hw3-1.cc
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $?
+	g++ $(CXXFLAGS) $(LDFLAGS) -o $@ $?
 
 hw3-2: hw3-2.cu
 	nvcc $(NVFLAGS) $(LDFLAGS) -o $@ $?

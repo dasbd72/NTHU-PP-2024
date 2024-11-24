@@ -1,112 +1,126 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <immintrin.h>
+#include <omp.h>
+#include <pthread.h>
 
-const int INF = ((1 << 30) - 1);
-const int V = 50010;
-void input(char* inFileName);
-void output(char* outFileName);
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <iostream>
+#include <queue>
+#include <thread>
+#include <utility>
+#include <vector>
 
-void block_FW(int B);
-int ceil(int a, int b);
-void cal(int B, int Round, int block_start_x, int block_start_y, int block_width, int block_height);
+constexpr int block_size = 40;
+constexpr float inv_block_size = 1.0f / block_size;
+constexpr int infinity = ((1 << 30) - 1);
 
-int n, m;
-static int Dist[V][V];
+struct edge_t {
+    int src;
+    int dst;
+    int w;
+};
 
-int main(int argc, char* argv[]) {
-    input(argv[1]);
-    int B = 512;
-    block_FW(B);
-    output(argv[2]);
-    return 0;
-}
+inline int calc_blk_idx(int r, int c, int nblocks);
 
-void input(char* infile) {
-    FILE* file = fopen(infile, "rb");
-    fread(&n, sizeof(int), 1, file);
-    fread(&m, sizeof(int), 1, file);
+inline void proc(int *blk_dist, int s_i, int e_i, int s_j, int e_j, int k, int nblocks, int ncpus);
 
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
+int main(int argc, char **argv) {
+    assert(argc == 3);
+
+    char *input_filename = argv[1];
+    char *output_filename = argv[2];
+    FILE *input_file;
+    FILE *output_file;
+    int ncpus = omp_get_max_threads();
+    int V, E;
+    edge_t *edge;
+    int *dist;
+    int VP;
+    int nblocks;
+    int *blk_dist;
+
+    // Read input
+    input_file = fopen(input_filename, "rb");
+    fread(&V, sizeof(int), 1, input_file);
+    fread(&E, sizeof(int), 1, input_file);
+    edge = (edge_t *)malloc(sizeof(edge_t) * E);
+    fread(edge, sizeof(edge_t), E, input_file);
+    dist = (int *)malloc(sizeof(int) * V * V);
+    fclose(input_file);
+
+    // Initialize
+    nblocks = (int)ceilf(float(V) * inv_block_size);
+    VP = nblocks * block_size;
+    blk_dist = (int *)malloc(sizeof(int) * VP * VP);
+#pragma omp parallel for num_threads(ncpus) schedule(static) default(shared) collapse(2)
+    for (int i = 0; i < VP; i++) {
+        for (int j = 0; j < VP; j++) {
             if (i == j) {
-                Dist[i][j] = 0;
+                blk_dist[calc_blk_idx(i, j, nblocks)] = 0;
             } else {
-                Dist[i][j] = INF;
+                blk_dist[calc_blk_idx(i, j, nblocks)] = infinity;
             }
         }
     }
-
-    int pair[3];
-    for (int i = 0; i < m; ++i) {
-        fread(pair, sizeof(int), 3, file);
-        Dist[pair[0]][pair[1]] = pair[2];
+#pragma omp parallel for num_threads(ncpus) schedule(static) default(shared)
+    for (int i = 0; i < E; i++) {
+        blk_dist[calc_blk_idx(edge[i].src, edge[i].dst, nblocks)] = edge[i].w;
     }
-    fclose(file);
-}
 
-void output(char* outFileName) {
-    FILE* outfile = fopen(outFileName, "w");
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-            if (Dist[i][j] >= INF)
-                Dist[i][j] = INF;
+    // Blocked Floyd-Warshall
+    for (int k = 0; k < nblocks; k++) {
+        // Phase 1
+        proc(blk_dist, k, k + 1, k, k + 1, k, nblocks, ncpus);
+        // Phase 2
+        proc(blk_dist, k, k + 1, 0, k, k, nblocks, ncpus);
+        proc(blk_dist, k, k + 1, k + 1, nblocks, k, nblocks, ncpus);
+        proc(blk_dist, 0, k, k, k + 1, k, nblocks, ncpus);
+        proc(blk_dist, k + 1, nblocks, k, k + 1, k, nblocks, ncpus);
+        // Phase 3
+        proc(blk_dist, 0, k, 0, k, k, nblocks, ncpus);
+        proc(blk_dist, 0, k, k + 1, nblocks, k, nblocks, ncpus);
+        proc(blk_dist, k + 1, nblocks, 0, k, k, nblocks, ncpus);
+        proc(blk_dist, k + 1, nblocks, k + 1, nblocks, k, nblocks, ncpus);
+    }
+
+    // Copy output to dist
+#pragma omp parallel for num_threads(ncpus) schedule(static) default(shared) collapse(2)
+    for (int i = 0; i < V; i++) {
+        for (int j = 0; j < V; j++) {
+            int blk_idx = calc_blk_idx(i, j, nblocks);
+            dist[i * V + j] = blk_dist[blk_idx] > infinity ? infinity : blk_dist[blk_idx];
         }
-        fwrite(Dist[i], sizeof(int), n, outfile);
     }
-    fclose(outfile);
+
+    // Write output
+    output_file = fopen(output_filename, "w");
+    fwrite(dist, sizeof(int), V * V, output_file);
+    fclose(output_file);
+
+    // Clean up
+    free(edge);
+    free(dist);
+    free(blk_dist);
+    return 0;
 }
 
-int ceil(int a, int b) { return (a + b - 1) / b; }
-
-void block_FW(int B) {
-    int round = ceil(n, B);
-    for (int r = 0; r < round; ++r) {
-        printf("%d %d\n", r, round);
-        fflush(stdout);
-        /* Phase 1*/
-        cal(B, r, r, r, 1, 1);
-
-        /* Phase 2*/
-        cal(B, r, r, 0, r, 1);
-        cal(B, r, r, r + 1, round - r - 1, 1);
-        cal(B, r, 0, r, 1, r);
-        cal(B, r, r + 1, r, 1, round - r - 1);
-
-        /* Phase 3*/
-        cal(B, r, 0, 0, r, r);
-        cal(B, r, 0, r + 1, round - r - 1, r);
-        cal(B, r, r + 1, 0, r, round - r - 1);
-        cal(B, r, r + 1, r + 1, round - r - 1, round - r - 1);
-    }
+inline int calc_blk_idx(int r, int c, int nblocks) {
+    return (int(r * inv_block_size) * nblocks + int(c * inv_block_size)) * (block_size * block_size) + (r % block_size) * block_size + (c % block_size);
 }
 
-void cal(
-    int B, int Round, int block_start_x, int block_start_y, int block_width, int block_height) {
-    int block_end_x = block_start_x + block_height;
-    int block_end_y = block_start_y + block_width;
-
-    for (int b_i = block_start_x; b_i < block_end_x; ++b_i) {
-        for (int b_j = block_start_y; b_j < block_end_y; ++b_j) {
-            // To calculate B*B elements in the block (b_i, b_j)
-            // For each block, it need to compute B times
-            for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
-                // To calculate original index of elements in the block (b_i, b_j)
-                // For instance, original index of (0,0) in block (1,2) is (2,5) for V=6,B=2
-                int block_internal_start_x = b_i * B;
-                int block_internal_end_x = (b_i + 1) * B;
-                int block_internal_start_y = b_j * B;
-                int block_internal_end_y = (b_j + 1) * B;
-
-                if (block_internal_end_x > n)
-                    block_internal_end_x = n;
-                if (block_internal_end_y > n)
-                    block_internal_end_y = n;
-
-                for (int i = block_internal_start_x; i < block_internal_end_x; ++i) {
-                    for (int j = block_internal_start_y; j < block_internal_end_y; ++j) {
-                        if (Dist[i][k] + Dist[k][j] < Dist[i][j]) {
-                            Dist[i][j] = Dist[i][k] + Dist[k][j];
-                        }
+inline void proc(int *blk_dist, int s_i, int e_i, int s_j, int e_j, int k, int nblocks, int ncpus) {
+#pragma omp parallel for num_threads(ncpus) schedule(static) default(shared) collapse(2)
+    for (int i = s_i; i < e_i; i++) {
+        for (int j = s_j; j < e_j; j++) {
+            int *ik_ptr = blk_dist + (i * nblocks + k) * (block_size * block_size);
+            int *ij_ptr = blk_dist + (i * nblocks + j) * (block_size * block_size);
+            int *kj_ptr = blk_dist + (k * nblocks + j) * (block_size * block_size);
+            for (int b = 0; b < block_size; b++) {
+                for (int r = 0; r < block_size; r++) {
+#pragma GCC ivdep
+                    for (int c = 0; c < block_size; c++) {
+                        ij_ptr[r * block_size + c] = std::min(ij_ptr[r * block_size + c], ik_ptr[r * block_size + b] + kj_ptr[b * block_size + c]);
                     }
                 }
             }
