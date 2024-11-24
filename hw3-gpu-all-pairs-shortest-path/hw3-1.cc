@@ -11,9 +11,9 @@
 #include <utility>
 #include <vector>
 
-constexpr int block_size = 40;
-constexpr float inv_block_size = 1.0f / block_size;
-constexpr int infinity = ((1 << 30) - 1);
+constexpr int BLOCK_SIZE = 40;
+constexpr float INV_BLOCK_SIZE = 1.0f / BLOCK_SIZE;
+constexpr int INF = ((1 << 30) - 1);
 
 struct edge_t {
     int src;
@@ -50,8 +50,8 @@ int main(int argc, char **argv) {
     fclose(input_file);
 
     // Initialize
-    nblocks = (int)ceilf(float(V) * inv_block_size);
-    VP = nblocks * block_size;
+    nblocks = (int)ceilf(float(V) * INV_BLOCK_SIZE);
+    VP = nblocks * BLOCK_SIZE;
     blk_dist = (int *)malloc(sizeof(int) * VP * VP);
 #pragma omp parallel for num_threads(ncpus) schedule(static) default(shared) collapse(2)
     for (int i = 0; i < VP; i++) {
@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
             if (i == j) {
                 blk_dist[calc_blk_idx(i, j, nblocks)] = 0;
             } else {
-                blk_dist[calc_blk_idx(i, j, nblocks)] = infinity;
+                blk_dist[calc_blk_idx(i, j, nblocks)] = INF;
             }
         }
     }
@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < V; i++) {
         for (int j = 0; j < V; j++) {
             int blk_idx = calc_blk_idx(i, j, nblocks);
-            dist[i * V + j] = blk_dist[blk_idx] > infinity ? infinity : blk_dist[blk_idx];
+            dist[i * V + j] = blk_dist[blk_idx] > INF ? INF : blk_dist[blk_idx];
         }
     }
 
@@ -106,21 +106,21 @@ int main(int argc, char **argv) {
 }
 
 inline int calc_blk_idx(int r, int c, int nblocks) {
-    return (int(r * inv_block_size) * nblocks + int(c * inv_block_size)) * (block_size * block_size) + (r % block_size) * block_size + (c % block_size);
+    return (int(r * INV_BLOCK_SIZE) * nblocks + int(c * INV_BLOCK_SIZE)) * (BLOCK_SIZE * BLOCK_SIZE) + (r % BLOCK_SIZE) * BLOCK_SIZE + (c % BLOCK_SIZE);
 }
 
 inline void proc(int *blk_dist, int s_i, int e_i, int s_j, int e_j, int k, int nblocks, int ncpus) {
 #pragma omp parallel for num_threads(ncpus) schedule(static) default(shared) collapse(2)
     for (int i = s_i; i < e_i; i++) {
         for (int j = s_j; j < e_j; j++) {
-            int *ik_ptr = blk_dist + (i * nblocks + k) * (block_size * block_size);
-            int *ij_ptr = blk_dist + (i * nblocks + j) * (block_size * block_size);
-            int *kj_ptr = blk_dist + (k * nblocks + j) * (block_size * block_size);
-            for (int b = 0; b < block_size; b++) {
-                for (int r = 0; r < block_size; r++) {
+            int *ik_ptr = blk_dist + (i * nblocks + k) * (BLOCK_SIZE * BLOCK_SIZE);
+            int *ij_ptr = blk_dist + (i * nblocks + j) * (BLOCK_SIZE * BLOCK_SIZE);
+            int *kj_ptr = blk_dist + (k * nblocks + j) * (BLOCK_SIZE * BLOCK_SIZE);
+            for (int b = 0; b < BLOCK_SIZE; b++) {
+                for (int r = 0; r < BLOCK_SIZE; r++) {
 #pragma GCC ivdep
-                    for (int c = 0; c < block_size; c++) {
-                        ij_ptr[r * block_size + c] = std::min(ij_ptr[r * block_size + c], ik_ptr[r * block_size + b] + kj_ptr[b * block_size + c]);
+                    for (int c = 0; c < BLOCK_SIZE; c++) {
+                        ij_ptr[r * BLOCK_SIZE + c] = std::min(ij_ptr[r * BLOCK_SIZE + c], ik_ptr[r * BLOCK_SIZE + b] + kj_ptr[b * BLOCK_SIZE + c]);
                     }
                 }
             }
