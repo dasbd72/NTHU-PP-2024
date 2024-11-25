@@ -118,10 +118,21 @@ inline void proc(int *blk_dist, int s_i, int e_i, int s_j, int e_j, int k, int n
             int *kj_ptr = blk_dist + (k * nblocks + j) * (BLOCK_SIZE * BLOCK_SIZE);
             for (int b = 0; b < BLOCK_SIZE; b++) {
                 for (int r = 0; r < BLOCK_SIZE; r++) {
+#ifdef MANUAL_SIMD
+                    __m128i vec_ik = _mm_set1_epi32(ik_ptr[r * BLOCK_SIZE + b]);
+                    for (int c = 0; c < BLOCK_SIZE; c += 4) {
+                        __m128i vec_kj = _mm_loadu_si128((__m128i *)(kj_ptr + b * BLOCK_SIZE + c));
+                        __m128i vec_ij = _mm_loadu_si128((__m128i *)(ij_ptr + r * BLOCK_SIZE + c));
+                        __m128i vec_sum = _mm_add_epi32(vec_ik, vec_kj);
+                        __m128i vec_min = _mm_min_epi32(vec_ij, vec_sum);
+                        _mm_storeu_si128((__m128i *)(ij_ptr + r * BLOCK_SIZE + c), vec_min);
+                    }
+#else
 #pragma GCC ivdep
                     for (int c = 0; c < BLOCK_SIZE; c++) {
                         ij_ptr[r * BLOCK_SIZE + c] = std::min(ij_ptr[r * BLOCK_SIZE + c], ik_ptr[r * BLOCK_SIZE + b] + kj_ptr[b * BLOCK_SIZE + c]);
                     }
+#endif
                 }
             }
         }
