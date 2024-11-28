@@ -222,7 +222,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
+env/*
 venv/
 ENV/
 env.bak/
@@ -292,3 +292,7 @@ pyrightconfig.json
 
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 /testcases
+/ouptuts/*
+/nsys-reports/*
+!env/env.template.sh
+/hw4
