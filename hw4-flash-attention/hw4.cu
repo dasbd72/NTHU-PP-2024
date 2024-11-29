@@ -53,6 +53,25 @@ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
 void update_mlo(float *mi, float *li, float *oi, float *sij, float *vj, int d);
 };  // namespace fused_flash_attention
 
+namespace flash_attention_2 {
+void flash_attention(Data *data);
+void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d);
+void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
+void row_max(float *mij_new, float *sij, float *mij);
+void minus_max_and_exp(float *pij, float *sij, float *mij_new);
+void row_sum(float *lij, float *pij, float *mij_new, float *mij);
+void inner_update_o(float *oij, float *pij, float *mij_new, float *mij, float *vj, int d);
+void update_o(float *oi, float *lij, float *oij, int d);
+};  // namespace flash_attention_2
+
+namespace fused_flash_attention_2 {
+void flash_attention(Data *data);
+void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d);
+void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
+void inner_update_mlo(float *mij, float *lij, float *oij, float *sij, float *vj, int d);
+void update_o(float *oi, float *lij, float *oij, int d);
+};  // namespace fused_flash_attention_2
+
 int main(int argc, char *argv[]) {
     NVTX_RANGE_FUNC();
     if (argc != 3) {
@@ -67,7 +86,11 @@ int main(int argc, char *argv[]) {
 
     input(&data);
 
+#if FLASH_ATTN == 1
     flash_attention::flash_attention(&data);
+#elif FLASH_ATTN == 2
+    flash_attention_2::flash_attention(&data);
+#endif
 
     output(&data);
 
@@ -396,3 +419,245 @@ void update_mlo(float *mi, float *li, float *oi, float *sij, float *vj, int d) {
     free(pij);
 }
 };  // namespace fused_flash_attention
+
+namespace flash_attention_2 {
+void flash_attention(Data *data) {
+    NVTX_RANGE_FUNC();
+    int B = data->B;
+    int N = data->N;
+    int d = data->d;
+    float *Q = data->Q;
+    float *K = data->K;
+    float *V = data->V;
+    float *O = data->O;
+
+    for (int i = 0; i < B; i++) {
+        flash_attention_block(
+            O + (i * N * d),
+            Q + (i * N * d),
+            K + (i * N * d),
+            V + (i * N * d),
+            N,
+            d);
+    }
+}
+
+void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d) {
+    int tr = N / BLOCK_R, tc = N / BLOCK_C;
+    float *oi = (float *)malloc(d * BLOCK_R * sizeof(float));
+    float *qi = (float *)malloc(d * BLOCK_R * sizeof(float));
+    float *kj = (float *)malloc(d * BLOCK_C * sizeof(float));
+    float *vj = (float *)malloc(d * BLOCK_C * sizeof(float));
+    float *li = (float *)malloc(BLOCK_R * sizeof(float));
+
+    float *sij = (float *)malloc(BLOCK_R * BLOCK_C * sizeof(float));
+    float *pij = (float *)malloc(BLOCK_R * BLOCK_C * sizeof(float));
+    float *lij = (float *)malloc(BLOCK_R * sizeof(float));
+    float *mij = (float *)malloc(BLOCK_R * sizeof(float));
+    float *mij_new = (float *)malloc(BLOCK_R * sizeof(float));
+    float *oij = (float *)malloc(d * BLOCK_R * sizeof(float));
+
+    for (int i = 0; i < tr; i++) {
+        memcpy(qi, q + i * d * BLOCK_R, d * BLOCK_R * sizeof(float));
+        memset(lij, 0x00, BLOCK_R * sizeof(float));
+        for (int t = 0; t < BLOCK_R; t++) {
+            mij[t] = FLT_MIN;
+        }
+        memset(oij, 0x00, d * BLOCK_R * sizeof(float));
+        for (int j = 0; j < tc; j++) {
+            memcpy(kj, k + j * d * BLOCK_C, d * BLOCK_C * sizeof(float));
+            memcpy(vj, v + j * d * BLOCK_C, d * BLOCK_C * sizeof(float));
+
+            qk_dot_and_scalar(sij, qi, kj, d, 1.0 / sqrtf(d));
+            row_max(mij_new, sij, mij);
+            minus_max_and_exp(pij, sij, mij_new);
+            row_sum(lij, pij, mij_new, mij);
+
+            inner_update_o(oij, pij, mij_new, mij, vj, d);
+
+            memcpy(mij, mij_new, BLOCK_R * sizeof(float));
+        }
+        update_o(oi, lij, oij, d);
+
+        memcpy(o + i * d * BLOCK_R, oi, d * BLOCK_R * sizeof(float));
+    }
+
+    free(sij);
+    free(pij);
+    free(lij);
+    free(mij);
+    free(mij_new);
+    free(oij);
+
+    free(kj);
+    free(vj);
+    free(qi);
+    free(oi);
+    free(li);
+}
+
+void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar) {
+    flash_attention::qk_dot_and_scalar(out, q, k, d, scalar);
+}
+
+void row_max(float *mij_new, float *sij, float *mij) {
+    NVTX_RANGE_FUNC();
+    for (int i = 0; i < BLOCK_R; i++) {
+        mij_new[i] = mij[i];
+        for (int j = 0; j < BLOCK_C; j++) {
+            mij_new[i] = std::max(mij_new[i], sij[i * BLOCK_C + j]);
+        }
+    }
+}
+
+void minus_max_and_exp(float *pij, float *sij, float *mij_new) {
+    NVTX_RANGE_FUNC();
+    for (int i = 0; i < BLOCK_R; i++) {
+        for (int j = 0; j < BLOCK_C; j++) {
+            pij[i * BLOCK_C + j] = expf(sij[i * BLOCK_C + j] - mij_new[i]);
+        }
+    }
+}
+
+void row_sum(float *lij, float *pij, float *mij_new, float *mij) {
+    NVTX_RANGE_FUNC();
+    for (int i = 0; i < BLOCK_R; i++) {
+        lij[i] = expf(mij[i] - mij_new[i]) * lij[i];
+        for (int j = 0; j < BLOCK_C; j++) {
+            lij[i] += pij[i * BLOCK_C + j];
+        }
+    }
+}
+
+void inner_update_o(float *oij, float *pij, float *mij_new, float *mij, float *vj, int d) {
+    NVTX_RANGE_FUNC();
+    for (int i = 0; i < BLOCK_R; i++) {
+        for (int j = 0; j < d; j++) {
+            oij[i * d + j] = expf(mij[i] - mij_new[i]) * oij[i * d + j];
+            for (int t = 0; t < BLOCK_C; t++) {
+                oij[i * d + j] += pij[i * BLOCK_C + t] * vj[t * d + j];
+            }
+        }
+    }
+}
+
+void update_o(float *oi, float *lij, float *oij, int d) {
+    NVTX_RANGE_FUNC();
+    for (int i = 0; i < BLOCK_R; i++) {
+        for (int j = 0; j < d; j++) {
+            oi[i * d + j] = oij[i * d + j] / lij[i];
+        }
+    }
+}
+};  // namespace flash_attention_2
+
+namespace fused_flash_attention_2 {
+void flash_attention(Data *data) {
+    NVTX_RANGE_FUNC();
+    int B = data->B;
+    int N = data->N;
+    int d = data->d;
+    float *Q = data->Q;
+    float *K = data->K;
+    float *V = data->V;
+    float *O = data->O;
+
+    for (int i = 0; i < B; i++) {
+        flash_attention_block(
+            O + (i * N * d),
+            Q + (i * N * d),
+            K + (i * N * d),
+            V + (i * N * d),
+            N,
+            d);
+    }
+}
+
+void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d) {
+    int tr = N / BLOCK_R, tc = N / BLOCK_C;
+    float *oi = (float *)malloc(d * BLOCK_R * sizeof(float));
+    float *qi = (float *)malloc(d * BLOCK_R * sizeof(float));
+    float *kj = (float *)malloc(d * BLOCK_C * sizeof(float));
+    float *vj = (float *)malloc(d * BLOCK_C * sizeof(float));
+    float *li = (float *)malloc(BLOCK_R * sizeof(float));
+
+    float *sij = (float *)malloc(BLOCK_R * BLOCK_C * sizeof(float));
+    float *lij = (float *)malloc(BLOCK_R * sizeof(float));
+    float *mij = (float *)malloc(BLOCK_R * sizeof(float));
+    float *oij = (float *)malloc(d * BLOCK_R * sizeof(float));
+
+    for (int i = 0; i < tr; i++) {
+        memcpy(qi, q + i * d * BLOCK_R, d * BLOCK_R * sizeof(float));
+        memset(lij, 0x00, BLOCK_R * sizeof(float));
+        for (int t = 0; t < BLOCK_R; t++) {
+            mij[t] = FLT_MIN;
+        }
+        memset(oij, 0x00, d * BLOCK_R * sizeof(float));
+        for (int j = 0; j < tc; j++) {
+            memcpy(kj, k + j * d * BLOCK_C, d * BLOCK_C * sizeof(float));
+            memcpy(vj, v + j * d * BLOCK_C, d * BLOCK_C * sizeof(float));
+
+            qk_dot_and_scalar(sij, qi, kj, d, 1.0 / sqrtf(d));
+            inner_update_mlo(mij, lij, oij, sij, vj, d);
+        }
+        update_o(oi, lij, oij, d);
+
+        memcpy(o + i * d * BLOCK_R, oi, d * BLOCK_R * sizeof(float));
+    }
+
+    free(sij);
+    free(lij);
+    free(mij);
+    free(oij);
+
+    free(kj);
+    free(vj);
+    free(qi);
+    free(oi);
+    free(li);
+}
+
+void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar) {
+    flash_attention::qk_dot_and_scalar(out, q, k, d, scalar);
+}
+
+void inner_update_mlo(float *mij, float *lij, float *oij, float *sij, float *vj, int d) {
+    NVTX_RANGE_FUNC();
+    float *mij_new = (float *)malloc(BLOCK_R * sizeof(float));
+    float *pij = (float *)malloc(BLOCK_C * sizeof(float));
+    float val0;
+
+    for (int i = 0; i < BLOCK_R; i++) {
+        // Row max
+        mij_new[i] = mij[i];
+        for (int j = 0; j < BLOCK_C; j++) {
+            mij_new[i] = std::max(mij_new[i], sij[i * BLOCK_C + j]);
+        }
+        // Minus max and exp + Row sum
+        val0 = expf(mij[i] - mij_new[i]);
+        lij[i] = val0 * lij[i];
+        for (int j = 0; j < BLOCK_C; j++) {
+            // Minus max and exp
+            pij[j] = expf(sij[i * BLOCK_C + j] - mij_new[i]);
+            // Row sum
+            lij[i] += pij[j];
+        }
+        // Update O
+        for (int j = 0; j < d; j++) {
+            oij[i * d + j] = val0 * oij[i * d + j];
+            for (int t = 0; t < BLOCK_C; t++) {
+                oij[i * d + j] += pij[t] * vj[t * d + j];
+            }
+        }
+    }
+
+    memcpy(mij, mij_new, BLOCK_R * sizeof(float));
+
+    free(mij_new);
+    free(pij);
+}
+
+void update_o(float *oi, float *lij, float *oij, int d) {
+    flash_attention_2::update_o(oi, lij, oij, d);
+}
+};  // namespace fused_flash_attention_2
