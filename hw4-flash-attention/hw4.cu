@@ -23,6 +23,7 @@
     {}
 #endif  // PROFILING
 
+constexpr float FLOAT_MIN = -FLT_MAX;
 constexpr int BLOCK_C = 32;
 constexpr int BLOCK_R = 32;
 
@@ -179,7 +180,7 @@ void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d)
     float *m = (float *)malloc(N * sizeof(float));
     memset(l, 0x00, N * sizeof(float));
     for (int i = 0; i < N; i++) {
-        m[i] = FLT_MIN;
+        m[i] = FLOAT_MIN;
     }
 
     int tr = N / BLOCK_R, tc = N / BLOCK_C;
@@ -331,7 +332,7 @@ void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d)
     float *m = (float *)malloc(N * sizeof(float));
     memset(l, 0x00, N * sizeof(float));
     for (int i = 0; i < N; i++) {
-        m[i] = FLT_MIN;
+        m[i] = FLOAT_MIN;
     }
 
     int tr = N / BLOCK_R, tc = N / BLOCK_C;
@@ -461,7 +462,7 @@ void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d)
         memcpy(qi, q + i * d * BLOCK_R, d * BLOCK_R * sizeof(float));
         memset(lij, 0x00, BLOCK_R * sizeof(float));
         for (int t = 0; t < BLOCK_R; t++) {
-            mij[t] = FLT_MIN;
+            mij[t] = FLOAT_MIN;
         }
         memset(oij, 0x00, d * BLOCK_R * sizeof(float));
         for (int j = 0; j < tc; j++) {
@@ -590,7 +591,7 @@ void flash_attention_block(float *o, float *q, float *k, float *v, int N, int d)
         memcpy(qi, q + i * d * BLOCK_R, d * BLOCK_R * sizeof(float));
         memset(lij, 0x00, BLOCK_R * sizeof(float));
         for (int t = 0; t < BLOCK_R; t++) {
-            mij[t] = FLT_MIN;
+            mij[t] = FLOAT_MIN;
         }
         memset(oij, 0x00, d * BLOCK_R * sizeof(float));
         for (int j = 0; j < tc; j++) {
