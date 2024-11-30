@@ -7,6 +7,7 @@ from .build import build
 
 class Args:
     verify = False
+    epsilon = 5e-3
     local_dir = False
     testcase_dir = "testcases"
     profile = "nsys"
@@ -20,6 +21,12 @@ def parse_arguments() -> Args:
         "--verify",
         action="store_true",
         help="Verify output against expected results",
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=5e-3,
+        help="Epsilon for floating point comparisons",
     )
     parser.add_argument(
         "--local-dir",
@@ -93,11 +100,9 @@ def run_testcase(testcase, args: Args):
 
     # Verification if needed
     if args.verify:
-        if not verify_output(outputs_bin, testcase_bin):
+        if not verify_output(outputs_bin, testcase_bin, args.epsilon):
             print("Verification failed")
             exit(1)
-        else:
-            print("Test passed")
     exit(0)
 
 
@@ -135,9 +140,13 @@ def execute_program(testcase_in, outputs_bin, args: Args):
         exit(1)
 
 
-def verify_output(outputs_bin, testcase_bin):
+def verify_output(outputs_bin, testcase_bin, epsilon):
     """Verifies the output of the program."""
-    return os.system(f"hw2-diff {testcase_bin} {outputs_bin}") == 0
+    print("============ Verifying =============")
+    print("Result: ", end="", flush=True)
+    code = os.system(f"hw4-diff {testcase_bin} {outputs_bin} {epsilon}") == 0
+    print("====================================")
+    return code
 
 
 if __name__ == "__main__":
