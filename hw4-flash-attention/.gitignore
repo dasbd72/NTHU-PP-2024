@@ -296,3 +296,4 @@ pyrightconfig.json
 /nsys-reports/*
 !env/env.template.sh
 /hw4
+/utils/diff

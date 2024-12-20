@@ -144,7 +144,10 @@ def verify_output(outputs_bin, testcase_bin, epsilon):
     """Verifies the output of the program."""
     print("============ Verifying =============")
     print("Result: ", end="", flush=True)
-    code = os.system(f"hw4-diff {testcase_bin} {outputs_bin} {epsilon}") == 0
+    os.chdir("utils")
+    os.system("make diff")
+    os.chdir("..")
+    code = os.system(f"./utils/diff {testcase_bin} {outputs_bin} {epsilon}") == 0
     print("====================================")
     return code
 
