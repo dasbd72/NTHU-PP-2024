@@ -10,7 +10,9 @@ class Args:
     epsilon = 5e-3
     local_dir = False
     testcase_dir = "testcases"
-    profile = "nsys"
+    profiler = "nsys"
+    nsys_args = ""
+    nvprof_args = ""
     report_name = None
     testcase = None
 
@@ -40,16 +42,28 @@ def parse_arguments() -> Args:
         help="Directory of testcases",
     )
     parser.add_argument(
-        "--profile",
+        "--profiler",
         type=str,
-        choices=["nsys", "none"],
+        choices=["nsys", "nvprof", "none"],
         default="none",
         help="Profiling tool",
     )
     parser.add_argument(
+        "--nsys-args",
+        type=str,
+        default="",
+        help="Additional arguments for nsys",
+    )
+    parser.add_argument(
+        "--nvprof-args",
+        type=str,
+        default="",
+        help="Additional arguments for nvprof",
+    )
+    parser.add_argument(
         "--report-name",
         type=str,
-        help="Name of the report (only used with --profile=nsys)",
+        help="Name of the report (only used with --profiler=nsys)",
     )
     parser.add_argument("testcase", type=str, help="Testcase name")
     args: Args = parser.parse_args()
@@ -122,10 +136,12 @@ def execute_program(testcase_in, outputs_bin, args: Args):
     else:
         report_name = args.report_name
 
-    if args.profile == "nsys":
+    if args.profiler == "nsys":
         outputs_report = f"nsys-reports/{report_name}/report"
         os.makedirs(os.path.dirname(outputs_report), exist_ok=True)
-        cmd = f"{cmd_srun} nsys profile -t nvtx,cuda --stats=true -f true -o {outputs_report} {cmd_prog}"
+        cmd = f"{cmd_srun} nsys profile -t nvtx,cuda --stats=true -f true -o {outputs_report} {args.nsys_args} {cmd_prog}"
+    elif args.profiler == "nvprof":
+        cmd = f"{cmd_srun} nvprof {args.nvprof_args} {cmd_prog}"
     else:
         cmd = f"{cmd_srun} {cmd_prog}"
 
@@ -147,7 +163,9 @@ def verify_output(outputs_bin, testcase_bin, epsilon):
     os.chdir("utils")
     os.system("make diff")
     os.chdir("..")
-    code = os.system(f"./utils/diff {testcase_bin} {outputs_bin} {epsilon}") == 0
+    code = (
+        os.system(f"./utils/diff {testcase_bin} {outputs_bin} {epsilon}") == 0
+    )
     print("====================================")
     return code
 
