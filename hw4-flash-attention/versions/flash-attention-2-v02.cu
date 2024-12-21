@@ -35,8 +35,6 @@
         exit(1);                                                                                                  \
     }
 
-constexpr float FLOAT_MIN = -FLT_MAX;
-
 struct Data {
     char *input_filename;
     char *output_filename;
@@ -58,17 +56,13 @@ void flash_attention(Data *data);
 template <int bc, int br, int cr>
 __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N, int d);
 template <int bc, int br>
-__device__ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
+__device__ void qk_dot_and_scalar(float *pij, float *sij, float *q, float *k, int d, float scalar);
 template <int bc, int br>
-__device__ void row_max(float *mij1, float *sij, float *mij0, int n);
+__device__ void row_sum(float *lij1, float *pij, float *lij0, int n);
 template <int bc, int br>
-__device__ void minus_max_and_exp(float *pij, float *sij, float *mij1);
+__device__ void inner_update_o(float *oi, float *pij, float *vj, int n, int d);
 template <int bc, int br>
-__device__ void row_sum(float *lij1, float *pij, float *lij0, float *mij0, float *mij1, int n);
-template <int bc, int br>
-__device__ void inner_update_o(float *oi, float *pij, float *vj, float *mij0, float *mij1, int n, int d);
-template <int bc, int br>
-__device__ void outer_update_lo(float *lij1, float *oi, float *mij0, float *lij0, int d);
+__device__ void outer_update_lo(float *lij1, float *oi, float *lij0, int d);
 };  // namespace flash_attention
 
 int main(int argc, char *argv[]) {
@@ -108,7 +102,7 @@ void flash_attention_switch(Data *data) {
     fread(&data->N, sizeof(int), 1, data->input_file);
     fread(&data->d, sizeof(int), 1, data->input_file);
     if (data->d <= 64) {
-        flash_attention<32, 32, 1, 1>(data);
+        flash_attention<32, 32, 1, 20>(data);
     }
     data->output_file = fopen(data->output_filename, "wb");
     fwrite(data->O, sizeof(float), data->B * data->N * data->d, data->output_file);
@@ -158,8 +152,6 @@ void flash_attention(Data *data) {
                            br * d +
                            bc * d +
                            bc * d +
-                           br +
-                           br +
                            br +
                            br +
                            br * bc +
@@ -229,9 +221,7 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
     float *vj = kj + bc * d;     // (bc, d)
     float *lij0 = vj + bc * d;   // (br)
     float *lij1 = lij0 + br;     // (br)
-    float *mij0 = lij1 + br;     // (br)
-    float *mij1 = mij0 + br;     // (br)
-    float *sij = mij1 + br;      // (br, bc)
+    float *sij = lij1 + br;      // (br, bc)
     float *pij = sij + br * bc;  // (br, bc)
 
     float *tmpptr;
@@ -252,7 +242,6 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
     }
     if (tx == 0) {
         lij0[ty] = 0;
-        mij0[ty] = FLOAT_MIN;
     }
     for (int j = 0; j < tc; j++) {
         int n = min(N - j * bc, bc);
@@ -262,24 +251,17 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
             vj[tx * d + y] = v[j * bc * d + tx * d + y];
         }
         __syncthreads();
-        qk_dot_and_scalar<bc, br>(sij, qi, kj, d, scalar);
+        qk_dot_and_scalar<bc, br>(pij, sij, qi, kj, d, scalar);
         __syncthreads();
-        row_max<bc, br>(mij1, sij, mij0, n);
+        row_sum<bc, br>(lij1, pij, lij0, n);
         __syncthreads();
-        minus_max_and_exp<bc, br>(pij, sij, mij1);
-        __syncthreads();
-        row_sum<bc, br>(lij1, pij, lij0, mij0, mij1, n);
-        __syncthreads();
-        inner_update_o<bc, br>(oi, pij, vj, mij0, mij1, n, d);
-        tmpptr = mij0;
-        mij0 = mij1;
-        mij1 = tmpptr;
+        inner_update_o<bc, br>(oi, pij, vj, n, d);
         tmpptr = lij0;
         lij0 = lij1;
         lij1 = tmpptr;
         __syncthreads();
     }
-    outer_update_lo<bc, br>(lij1, oi, mij0, lij0, d);
+    outer_update_lo<bc, br>(lij1, oi, lij0, d);
     // Save O, l, m back to global memory
     for (int x = tx; x < d; x += bc) {
         o[ty * d + x] = oi[ty * d + x];
@@ -290,40 +272,23 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
 }
 
 template <int bc, int br>
-__device__ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar) {
+__device__ void qk_dot_and_scalar(float *pij, float *sij, float *q, float *k, int d, float scalar) {
     const int y = threadIdx.y;
     const int x = threadIdx.x;
     float sum = 0.0F;
     for (int t = 0; t < d; t++) {
         sum += q[y * d + t] * k[x * d + t];
     }
-    out[y * bc + x] = sum * scalar;
+    sum *= scalar;
+    sij[y * bc + x] = sum;
+    pij[y * bc + x] = expf(sum);
 }
 
 template <int bc, int br>
-__device__ void row_max(float *mij1, float *sij, float *mij0, int n) {
+__device__ void row_sum(float *lij1, float *pij, float *lij0, int n) {
     if (threadIdx.x == 0) {
         const int y = threadIdx.y;
-        float mx = mij0[y];
-        for (int t = 0; t < n; t++) {
-            mx = fmaxf(mx, sij[y * bc + t]);
-        }
-        mij1[y] = mx;
-    }
-}
-
-template <int bc, int br>
-__device__ void minus_max_and_exp(float *pij, float *sij, float *mij1) {
-    const int y = threadIdx.y;
-    const int x = threadIdx.x;
-    pij[y * bc + x] = expf(sij[y * bc + x] - mij1[y]);
-}
-
-template <int bc, int br>
-__device__ void row_sum(float *lij1, float *pij, float *lij0, float *mij0, float *mij1, int n) {
-    if (threadIdx.x == 0) {
-        const int y = threadIdx.y;
-        float sum = expf(mij0[y] - mij1[y]) * lij0[y];
+        float sum = lij0[y];
         for (int t = 0; t < n; t++) {
             sum += pij[y * bc + t];
         }
@@ -332,29 +297,27 @@ __device__ void row_sum(float *lij1, float *pij, float *lij0, float *mij0, float
 }
 
 template <int bc, int br>
-__device__ void inner_update_o(float *oi, float *pij, float *vj, float *mij0, float *mij1, int n, int d) {
+__device__ void inner_update_o(float *oi, float *pij, float *vj, int n, int d) {
     const int y = threadIdx.y;
-
-    float val0 = expf(mij0[y] - mij1[y]);
 
     for (int x = threadIdx.x; x < d; x += bc) {
         float sum = 0.0F;
         for (int t = 0; t < n; t++) {
             sum += pij[y * bc + t] * vj[t * d + x];
         }
-        oi[y * d + x] = val0 * oi[y * d + x] + sum;
+        oi[y * d + x] = oi[y * d + x] + sum;
     }
 }
 
 template <int bc, int br>
-__device__ void outer_update_lo(float *lij1, float *oi, float *mij0, float *lij0, int d) {
+__device__ void outer_update_lo(float *lij1, float *oi, float *lij0, int d) {
     const int y = threadIdx.y;
 
     for (int x = threadIdx.x; x < d; x += bc) {
         oi[y * d + x] /= lij0[y];
     }
     if (threadIdx.x == 0) {
-        lij1[y] = mij0[y] + logf(lij0[y]);
+        lij1[y] = logf(lij0[y]);
     }
 }
 };  // namespace flash_attention

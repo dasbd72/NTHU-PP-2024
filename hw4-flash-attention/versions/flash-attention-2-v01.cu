@@ -108,7 +108,7 @@ void flash_attention_switch(Data *data) {
     fread(&data->N, sizeof(int), 1, data->input_file);
     fread(&data->d, sizeof(int), 1, data->input_file);
     if (data->d <= 64) {
-        flash_attention<32, 32, 1, 1>(data);
+        flash_attention<32, 32, 1, 20>(data);
     }
     data->output_file = fopen(data->output_filename, "wb");
     fwrite(data->O, sizeof(float), data->B * data->N * data->d, data->output_file);

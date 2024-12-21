@@ -7,3 +7,8 @@
   - Padding the tensors
 - flash-attention-1-v03.cu
   - No padding
+- flash-attention-2-v01.cu
+  - Flash attention 2
+- flash-attention-2-v02.cu
+  - v01 No row max
+  - Fused qk dot and exp
