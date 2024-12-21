@@ -55,7 +55,7 @@ __global__ void cuda_init_array_kernel(T *arr, size_t size, T val);
 
 namespace flash_attention {
 void flash_attention_switch(Data *data);
-template <int bc, int br, int cr, int bb>
+template <int bc, int br, int cr>
 void flash_attention(Data *data);
 template <int bc, int br, int cr>
 __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N, int d);
@@ -110,7 +110,7 @@ void flash_attention_switch(Data *data) {
     fread(&data->N, sizeof(int), 1, data->input_file);
     fread(&data->d, sizeof(int), 1, data->input_file);
     if (data->d <= 64) {
-        flash_attention<32, 32, 1, 1>(data);
+        flash_attention<32, 32, 1>(data);
     }
     data->output_file = fopen(data->output_filename, "wb");
     fwrite(data->O, sizeof(float), data->B * data->N * data->d, data->output_file);
@@ -121,12 +121,13 @@ void flash_attention_switch(Data *data) {
     cudaFreeHost(data->O);
 }
 
-template <int bc, int br, int cr, int bb>
+template <int bc, int br, int cr>
 void flash_attention(Data *data) {
     NVTX_RANGE_FUNC();
     int B = data->B;
     int N = data->N;
     int d = data->d;
+    int bb = 1;
 
     // Create a CUDA stream for asynchronous operations
     int num_streams = (int)ceil((float)B / bb);
