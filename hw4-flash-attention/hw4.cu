@@ -356,9 +356,10 @@ __device__ __forceinline__ void minus_max_and_exp(float *pij, float *sij, float 
     int tx = threadIdx.x % num_warps;
     int ty = threadIdx.x / num_warps;
     for (int y = ty; y < ar; y += threads_per_warp) {
+        float mx = mij1[y];
         for (int x = tx; x < ac; x += num_warps) {
 #ifndef NO_ROWMAX
-            pij[y * bc + x] = expf(sij[y * bc + x] - mij1[y]);
+            pij[y * bc + x] = expf(sij[y * bc + x] - mx);
 #else
             pij[y * bc + x] = expf(sij[y * bc + x]);
 #endif  // NO_ROWMAX
