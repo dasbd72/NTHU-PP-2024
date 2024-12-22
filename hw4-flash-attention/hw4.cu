@@ -271,7 +271,7 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
     // Load O, Q, l, m to shared memory
     for (int y = ty; y < ar; y += threads_per_warp) {
         for (int x = tx; x < d; x += num_warps) {
-            oi[y * bd + x] = o[y * d + x];
+            oi[y * bd + x] = 0;
             qi[y * bd + x] = q[y * d + x];
         }
     }
