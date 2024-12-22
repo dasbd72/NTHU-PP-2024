@@ -300,7 +300,6 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
         minus_max_and_exp<ac, ar, bc, br, bd, num_warps, threads_per_warp>(pij, sij, mij1);
         __syncthreads();
         row_sum<ac, ar, bc, br, bd, num_warps, threads_per_warp>(lij1, pij, lij0, mij0, mij1, n);
-        __syncthreads();
         inner_update_o<ac, ar, bc, br, bd, num_warps, threads_per_warp>(oi, pij, vj, mij0, mij1, n, d);
 #ifndef NO_ROWMAX
         tmpptr = mij0;
