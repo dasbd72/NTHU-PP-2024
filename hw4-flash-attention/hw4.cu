@@ -284,7 +284,7 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
     for (int j = 0; j < tc; j++) {
         int n = min(N - j * ac, ac);
         // Load K and V to shared memory
-        for (int x = tx; x < ac; x += num_warps) {
+        for (int x = tx; x < n; x += num_warps) {
             for (int y = ty; y < d; y += threads_per_warp) {
                 kj[x * bd + y] = k[j * ac * d + x * d + y];
                 vj[x * bd + y] = v[j * ac * d + x * d + y];
