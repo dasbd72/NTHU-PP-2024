@@ -53,9 +53,9 @@ __global__ void cuda_init_array_kernel(T *arr, size_t size, T val);
 
 namespace flash_attention {
 void flash_attention_switch(Data *data);
-template <int bc, int br, int cr, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 void flash_attention(Data *data);
-template <int bc, int br, int cr, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N, int d);
 template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
@@ -120,9 +120,9 @@ void flash_attention_switch(Data *data) {
     fread(&data->N, sizeof(int), 1, data->input_file);
     fread(&data->d, sizeof(int), 1, data->input_file);
     if (data->d <= 32) {
-        flash_attention<32, 32, 1, 37, 8, 16>(data);
+        flash_attention<32, 32, 37, 8, 16>(data);
     } else if (data->d <= 64) {
-        flash_attention<32, 32, 1, 71, 8, 32>(data);
+        flash_attention<32, 32, 71, 8, 32>(data);
     }
 
     fclose(data->input_file);
@@ -133,7 +133,7 @@ void flash_attention_switch(Data *data) {
 #endif  // NO_FINALIZE
 }
 
-template <int bc, int br, int cr, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 void flash_attention(Data *data) {
     NVTX_RANGE_FUNC();
     int B = data->B;
@@ -197,9 +197,9 @@ void flash_attention(Data *data) {
         cudaMemcpyAsync(d_V + i * bb * N * d, V + i * bb * N * d, num_batches * N * d * sizeof(float), cudaMemcpyHostToDevice, streams[i]);
 
         // Kernel launch
-        dim3 grid((int)ceilf((float)N / (br * cr)), num_batches);
+        dim3 grid((int)ceilf((float)N / br), num_batches);
         dim3 block(num_warps * threads_per_warp);
-        flash_attention_kernel<bc, br, cr, bd, num_warps, threads_per_warp><<<grid, block, smem_size, streams[i]>>>(
+        flash_attention_kernel<bc, br, bd, num_warps, threads_per_warp><<<grid, block, smem_size, streams[i]>>>(
             d_O + i * bb * N * d,
             d_Q + i * bb * N * d,
             d_K + i * bb * N * d,
@@ -237,7 +237,7 @@ void flash_attention(Data *data) {
 #endif  // NO_FINALIZE
 }
 
-template <int bc, int br, int cr, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N, int d) {
     // Thread and block index
     const int tx = threadIdx.x % num_warps;
@@ -260,11 +260,11 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
     float *tmpptr;
 
     // Pointer to global memory
-    float *o = O + blockIdx.y * N * d + blockIdx.x * cr * br * d;  // (cr, br, d)
-    float *q = Q + blockIdx.y * N * d + blockIdx.x * cr * br * d;  // (cr, br, d)
-    float *k = K + blockIdx.y * N * d;                             // (N, d)
-    float *v = V + blockIdx.y * N * d;                             // (N, d)
-    float *l = L + blockIdx.y * N + blockIdx.x * cr * br;          // (cr, br)
+    float *o = O + blockIdx.y * N * d + blockIdx.x * br * d;  // (br, d)
+    float *q = Q + blockIdx.y * N * d + blockIdx.x * br * d;  // (br, d)
+    float *k = K + blockIdx.y * N * d;                        // (N, d)
+    float *v = V + blockIdx.y * N * d;                        // (N, d)
+    float *l = L + blockIdx.y * N + blockIdx.x * br;          // (br)
 
     float scalar = 1.0 / sqrtf(d);
 
