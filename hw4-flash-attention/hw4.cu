@@ -342,16 +342,12 @@ __device__ __forceinline__ void qk_dot_and_scalar(float *out, float *q, float *k
 
 template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void row_max(float *mij1, float *sij, float *mij0, int n) {
-    int tx = threadIdx.x % num_warps;
-    int ty = threadIdx.x / num_warps;
-    if (tx == 0) {
-        for (int y = ty; y < br; y += threads_per_warp) {
-            float mx = mij0[y];
-            for (int t = 0; t < n; t++) {
-                mx = fmaxf(mx, sij[y * bc + t]);
-            }
-            mij1[y] = mx;
+    for (int y = threadIdx.x; y < br; y += blockDim.x) {
+        float mx = mij0[y];
+        for (int t = 0; t < n; t++) {
+            mx = fmaxf(mx, sij[y * bc + t]);
         }
+        mij1[y] = mx;
     }
 }
 
@@ -372,20 +368,16 @@ __device__ __forceinline__ void minus_max_and_exp(float *pij, float *sij, float 
 
 template <int bc, int br, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void row_sum(float *lij1, float *pij, float *lij0, float *mij0, float *mij1, int n) {
-    int tx = threadIdx.x % num_warps;
-    int ty = threadIdx.x / num_warps;
-    if (tx == 0) {
-        for (int y = ty; y < br; y += threads_per_warp) {
+    for (int y = threadIdx.x; y < br; y += blockDim.x) {
 #ifndef NO_ROWMAX
-            float sum = expf(mij0[y] - mij1[y]) * lij0[y];
+        float sum = expf(mij0[y] - mij1[y]) * lij0[y];
 #else
-            float sum = lij0[y];
+        float sum = lij0[y];
 #endif  // NO_ROWMAX
-            for (int t = 0; t < n; t++) {
-                sum += pij[y * bc + t];
-            }
-            lij1[y] = sum;
+        for (int t = 0; t < n; t++) {
+            sum += pij[y * bc + t];
         }
+        lij1[y] = sum;
     }
 }
 
