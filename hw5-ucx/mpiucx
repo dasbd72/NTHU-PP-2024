@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Set the directory for UCX libraries
+ucx_lib_directory="$HOME/ucx-pp/lib"
+
+# Build the LD_PRELOAD string
+# It searches for specific UCX library files (libucp.so.0, libuct.so.0, libucm.so.0, libucs.so.0)
+# in the specified directory, then concatenates their paths, separated by colons
+ld_preload_paths=$(find "$ucx_lib_directory" -name 'libucp.so.0' -o -name 'libuct.so.0' -o -name 'libucm.so.0' -o -name 'libucs.so.0' | tr '\n' ':' | sed 's/:$//')
+
+# Set the LD_PRELOAD environment variable with the paths of the UCX libraries
+export LD_PRELOAD=$ld_preload_paths
+
+# Run the mpirun command, passing all provided arguments
+# "$@" is a special variable that holds all the arguments passed to the script
+mpirun --mca pml ucx -x LD_PRELOAD=$LD_PRELOAD "$@"
