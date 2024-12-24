@@ -10,8 +10,8 @@ def build(program, quiet: bool = False):
         os.system("make clean")
         code = os.system("make {}".format(program))
     else:
-        os.system("make clean -q")
-        code = os.system("make {} -q".format(program))
+        os.system("make clean > /dev/null 2>&1")
+        code = os.system("make {} > /dev/null 2>&1".format(program))
     if code != 0:
         return code
     return 0

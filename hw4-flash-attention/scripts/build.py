@@ -10,8 +10,8 @@ def build(quiet: bool = False):
         os.system("make clean")
         code = os.system("make hw4")
     else:
-        os.system("make clean -q")
-        code = os.system("make hw4 -q")
+        os.system("make clean > /dev/null 2>&1")
+        code = os.system("make hw4 > /dev/null 2>&1")
     if code != 0:
         return code
     return 0
