@@ -11,58 +11,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef DEBUG
-#define DEBUG_PRINT(fmt, args...) fprintf(stderr, fmt, ##args);
-#define DEBUG_MSG(str) std::cout << str << "\n";
-#define CUDA_EXE(F)                                                \
-    {                                                              \
-        cudaError_t err = F;                                       \
-        if ((err != cudaSuccess)) {                                \
-            printf("Error %s at %s:%d\n", cudaGetErrorString(err), \
-                   __FILE__, __LINE__);                            \
-            exit(-1);                                              \
-        }                                                          \
-    }
-#define CUDA_CHECK()                                                                    \
-    {                                                                                   \
-        cudaError_t err = cudaGetLastError();                                           \
-        if ((err != cudaSuccess)) {                                                     \
-            printf("Error %s at %s:%d\n", cudaGetErrorString(err), __FILE__, __LINE__); \
-            exit(-1);                                                                   \
-        }                                                                               \
-    }
-#else
-#define DEBUG_PRINT(fmt, args...)
-#define DEBUG_MSG(str)
-#define CUDA_EXE(F) F;
-#define CUDA_CHECK()
-#endif  // DEBUG
-
-#ifdef TIMING
-#include <ctime>
-#define TIMING_START(arg)          \
-    struct timespec __start_##arg; \
-    clock_gettime(CLOCK_MONOTONIC, &__start_##arg);
-#define TIMING_END(arg)                                                                       \
-    {                                                                                         \
-        struct timespec __temp_##arg, __end_##arg;                                            \
-        double __duration_##arg;                                                              \
-        clock_gettime(CLOCK_MONOTONIC, &__end_##arg);                                         \
-        if ((__end_##arg.tv_nsec - __start_##arg.tv_nsec) < 0) {                              \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec - 1;              \
-            __temp_##arg.tv_nsec = 1000000000 + __end_##arg.tv_nsec - __start_##arg.tv_nsec;  \
-        } else {                                                                              \
-            __temp_##arg.tv_sec = __end_##arg.tv_sec - __start_##arg.tv_sec;                  \
-            __temp_##arg.tv_nsec = __end_##arg.tv_nsec - __start_##arg.tv_nsec;               \
-        }                                                                                     \
-        __duration_##arg = __temp_##arg.tv_sec + (double)__temp_##arg.tv_nsec / 1000000000.0; \
-        printf("%s took %lfs.\n", #arg, __duration_##arg);                                    \
-    }
-#else
-#define TIMING_START(arg)
-#define TIMING_END(arg)
-#endif  // TIMING
-
 #define TILE 26
 #define block_size 78
 #define div_block 3
@@ -94,10 +42,7 @@ int main(int argc, char **argv) {
 
     cudaGetDeviceCount(&device_cnt);
 
-    TIMING_START(hw3_3);
-
     /* input */
-    TIMING_START(input);
     input_file = fopen(input_filename, "rb");
     assert(input_file);
     fread(&V, sizeof(int), 1, input_file);
@@ -106,11 +51,8 @@ int main(int argc, char **argv) {
     fread(edge, sizeof(int), 3 * E, input_file);
     dist = (int *)malloc(sizeof(int) * V * V);
     fclose(input_file);
-    DEBUG_PRINT("vertices: %d\nedges: %d\n", V, E);
-    TIMING_END(input);
 
     /* calculate */
-    TIMING_START(calculate);
     nblocks = (int)ceilf(float(V) / block_size);
     VP = nblocks * block_size;
 #pragma omp parallel num_threads(2) default(shared)
@@ -127,31 +69,24 @@ int main(int argc, char **argv) {
         }
 
         cudaSetDevice(tid);
-        CUDA_CHECK();
         cudaMalloc(&edge_dev[tid], sizeof(int) * 3 * E);
-        CUDA_CHECK();
-        CUDA_EXE(cudaMalloc(&dist_dev[tid], sizeof(int) * VP * VP));
-        CUDA_CHECK();
+        cudaMalloc(&dist_dev[tid], sizeof(int) * VP * VP);
 
         cudaMemcpy(edge_dev[tid], edge, sizeof(int) * 3 * E, cudaMemcpyDefault);
-        CUDA_CHECK();
 #pragma omp barrier
 
-        CUDA_CHECK();
         init_dist<<<dim3(VP / TILE, VP / TILE), dim3(TILE, TILE)>>>(dist_dev[tid], VP);
-        CUDA_CHECK();
         build_dist<<<(int)ceilf((float)E / (TILE * TILE)), TILE * TILE>>>(edge_dev[tid], E, dist_dev[tid], VP);
-        CUDA_CHECK();
         cudaFree(edge_dev[tid]);
 
         dim3 blk(TILE, TILE);
         for (int k = 0, nk = nblocks - 1; k < nblocks; k++, nk--) {
             /* Sync */
             if (range > 0 && k >= start && k < start + range)
-                CUDA_EXE(cudaMemcpy2D(
+                cudaMemcpy2D(
                     dist_dev[peerid] + VP * block_size * k, sizeof(int) * VP,
                     dist_dev[tid] + VP * block_size * k, sizeof(int) * VP,
-                    sizeof(int) * VP, block_size, cudaMemcpyDefault));
+                    sizeof(int) * VP, block_size, cudaMemcpyDefault);
 #pragma omp barrier
             /* Phase 1 */
             proc_1_glob<<<1, blk>>>(dist_dev[tid], k, VP);
@@ -163,31 +98,26 @@ int main(int argc, char **argv) {
                 proc_3_glob<<<dim3(nblocks - 1, range), blk>>>(dist_dev[tid], start, 0, k, VP);
         }
         if (tid == 0) {
-            CUDA_EXE(cudaHostRegister(dist, sizeof(int) * V * V, cudaHostRegisterDefault));
+            cudaHostRegister(dist, sizeof(int) * V * V, cudaHostRegisterDefault);
 #pragma omp barrier
-            CUDA_EXE(cudaMemcpy2D(dist, sizeof(int) * V, dist_dev[tid], sizeof(int) * VP, sizeof(int) * V, V, cudaMemcpyDefault));
-            CUDA_EXE(cudaHostUnregister(dist));
+            cudaMemcpy2D(dist, sizeof(int) * V, dist_dev[tid], sizeof(int) * VP, sizeof(int) * V, V, cudaMemcpyDefault);
+            cudaHostUnregister(dist);
         } else {
             if (range > 0)
-                CUDA_EXE(cudaMemcpy2D(
+                cudaMemcpy2D(
                     dist_dev[peerid] + VP * block_size * start, sizeof(int) * VP,
                     dist_dev[tid] + VP * block_size * start, sizeof(int) * VP,
-                    sizeof(int) * VP, block_size * range, cudaMemcpyDefault));
+                    sizeof(int) * VP, block_size * range, cudaMemcpyDefault);
 #pragma omp barrier
         }
-        CUDA_CHECK();
         cudaFree(dist_dev[tid]);
     }
-    TIMING_END(calculate);
 
     /* output */
-    TIMING_START(output);
     output_file = fopen(output_filename, "w");
     assert(output_file);
     fwrite(dist, 1, sizeof(int) * V * V, output_file);
     fclose(output_file);
-    TIMING_END(output);
-    TIMING_END(hw3_3);
 
     /* finalize */
     free(edge);
