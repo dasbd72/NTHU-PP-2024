@@ -176,6 +176,9 @@ def execute_program(testcase_in, outputs_bin, args: Args):
         print("Execution failed")
         exit(1)
 
+    if os.path.exists(outputs_bin):
+        os.remove(outputs_bin)
+
 
 if __name__ == "__main__":
     args = parse_arguments()
