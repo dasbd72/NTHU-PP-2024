@@ -36,6 +36,8 @@
 
 constexpr int int_max = ((1 << 30) - 1);
 
+double get_timestamp();
+
 template <int nt, int ts, int bs>
 int solve(int argc, char **argv);
 
@@ -53,6 +55,12 @@ int main(int argc, char **argv) {
     return solve<3, 26, 78>(argc, argv);
 }
 
+double get_timestamp() {
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
 template <int nt, int ts, int bs>
 int solve(int argc, char **argv) {
     assert(argc == 3);
@@ -62,7 +70,6 @@ int solve(int argc, char **argv) {
     FILE *input_file;
     FILE *output_file;
     int ncpus = omp_get_max_threads();
-    int device_cnt;
     int V, E;
     int *edge;
     int *edge_dev[2];
@@ -70,8 +77,9 @@ int solve(int argc, char **argv) {
     int *dist_dev[2];
     int VP;
     int nblocks;
+    double start_ts;
 
-    cudaGetDeviceCount(&device_cnt);
+    start_ts = get_timestamp();
 
     /* input */
     input_file = fopen(input_filename, "rb");
@@ -159,6 +167,10 @@ int solve(int argc, char **argv) {
     assert(output_file);
     fwrite(dist, 1, sizeof(int) * V * V, output_file);
     fclose(output_file);
+
+#ifdef PROFILING
+    fprintf(stderr, "Took: %lf\n", get_timestamp() - start_ts);
+#endif  // PROFILING
 
     /* finalize */
     free(edge);
