@@ -148,6 +148,8 @@ def clean_old_output(outputs_bin):
 def execute_program(testcase_in, outputs_bin, args: Args):
     """Executes the program with the given configuration."""
     cmd_srun = f"srun -N {args.nodes} -n {args.ntasks} -c {args.cpus_per_task} --gres=gpu:{args.gpus}"
+    if "amd" in args.program:
+        cmd_srun += " -p amd"
     cmd_prog = f"./{args.program} {testcase_in} {outputs_bin}"
 
     if args.report_name is None:
