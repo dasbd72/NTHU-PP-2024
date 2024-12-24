@@ -11,6 +11,29 @@
 #include <utility>
 #include <vector>
 
+#ifdef PROFILING
+#include <nvtx3/nvtx3.hpp>
+#define NVTX_RANGE_START(arg) \
+    nvtxRangePushA(#arg);
+#define NVTX_RANGE_END() \
+    nvtxRangePop();
+#define NVTX_RANGE_FUNC() \
+    NVTX3_FUNC_RANGE()
+#else
+#define NVTX_RANGE_START(arg) \
+    {}
+#define NVTX_RANGE_END() \
+    {}
+#define NVTX_RANGE_FUNC() \
+    {}
+#endif  // PROFILING
+
+#define CUDA_CHECK(condition)                                                                                     \
+    if ((condition) != cudaSuccess) {                                                                             \
+        fprintf(stderr, "CUDA error: %s at %s:%d\n", cudaGetErrorString(cudaGetLastError()), __FILE__, __LINE__); \
+        exit(1);                                                                                                  \
+    }
+
 constexpr int TILE = 26;
 constexpr int block_size = 78;
 constexpr int div_block = 3;
