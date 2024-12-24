@@ -11,10 +11,10 @@
 #include <utility>
 #include <vector>
 
-#define TILE 26
-#define block_size 78
-#define div_block 3
-const int INF = ((1 << 30) - 1);
+constexpr int TILE = 26;
+constexpr int block_size = 78;
+constexpr int div_block = 3;
+constexpr int int_max = ((1 << 30) - 1);
 
 __device__ int blk_idx(int r, int c, int blk_pitch, int nblocks);
 
@@ -320,7 +320,7 @@ __global__ void proc_3_glob(int *blk_dist, int s_i, int s_j, int k, int blk_pitc
 __global__ void init_dist(int *blk_dist, int blk_pitch, int nblocks) {
     int r = blockIdx.y * blockDim.y + threadIdx.y;
     int c = blockIdx.x * blockDim.x + threadIdx.x;
-    blk_dist[blk_idx(r, c, blk_pitch, nblocks)] = (r != c) * INF;
+    blk_dist[blk_idx(r, c, blk_pitch, nblocks)] = (r != c) * int_max;
 }
 __global__ void build_dist(int *edge, int E, int *blk_dist, int blk_pitch, int nblocks) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -509,7 +509,7 @@ __global__ void proc_3_blk_glob(int *blk_dist, int s_i, int s_j, int k, int pitc
 __global__ void init_blk_dist(int *blk_dist, int pitch) {
     int r = blockIdx.y * blockDim.y + threadIdx.y;
     int c = blockIdx.x * blockDim.x + threadIdx.x;
-    blk_dist[r * pitch + c] = (r != c) * INF;
+    blk_dist[r * pitch + c] = (r != c) * int_max;
 }
 __global__ void build_blk_dist(int *edge, int E, int *blk_dist, int pitch) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;

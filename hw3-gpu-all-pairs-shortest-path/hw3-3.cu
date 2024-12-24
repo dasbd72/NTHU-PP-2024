@@ -11,10 +11,10 @@
 #include <utility>
 #include <vector>
 
-#define TILE 26
-#define block_size 78
-#define div_block 3
-const int INF = ((1 << 30) - 1);
+constexpr int TILE = 26;
+constexpr int block_size = 78;
+constexpr int div_block = 3;
+constexpr int int_max = ((1 << 30) - 1);
 
 __global__ void proc_1_glob(int *blk_dist, int k, int pitch);
 __global__ void proc_2_glob(int *blk_dist, int s, int k, int pitch);
@@ -297,7 +297,7 @@ __global__ void proc_3_glob(int *blk_dist, int s_i, int s_j, int k, int pitch) {
 __global__ void init_dist(int *blk_dist, int pitch) {
     int r = blockIdx.y * blockDim.y + threadIdx.y;
     int c = blockIdx.x * blockDim.x + threadIdx.x;
-    blk_dist[r * pitch + c] = (r != c) * INF;
+    blk_dist[r * pitch + c] = (r != c) * int_max;
 }
 __global__ void build_dist(int *edge, int E, int *blk_dist, int pitch) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
