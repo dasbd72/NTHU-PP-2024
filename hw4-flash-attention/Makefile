@@ -1,5 +1,6 @@
 NVCC = nvcc
 NVFLAGS = -O3 -std=c++17 -Xptxas=-v -arch=sm_61 --use_fast_math -maxrregcount=64
+NVFLAGS += -Xcompiler "-Wall -Wextra -march=native"
 NVFLAGS += -DNO_FINALIZE -DNO_ROWMAX
 
 LDFLAGS = -lm
