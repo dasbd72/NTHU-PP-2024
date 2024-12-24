@@ -1,9 +1,5 @@
 
 #include <hip/hip_runtime.h>
-#include <immintrin.h>
-#include <omp.h>
-#include <pthread.h>
-
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -36,10 +32,20 @@
         exit(1);                                                                                                  \
     }
 
+struct Data {
+    char *input_filename;
+    char *output_filename;
+    FILE *input_file;
+    FILE *output_file;
+    int V, E;
+};
+
 constexpr int int_max = ((1 << 30) - 1);
 
+double get_timestamp();
+
 template <int nt, int ts, int bs>
-int solve(int argc, char **argv);
+void solve(Data *data);
 
 template <int nt, int ts, int bs>
 __device__ int blk_idx(int r, int c, int blk_pitch, int nblocks);
@@ -69,119 +75,148 @@ __global__ void init_blk_dist(int *blk_dist, int pitch);
 __global__ void build_blk_dist(int *edge, int E, int *blk_dist, int pitch);
 
 int main(int argc, char **argv) {
-    return solve<3, 26, 78>(argc, argv);
+    assert(argc == 3);
+
+    Data data;
+
+    data.input_filename = argv[1];
+    data.output_filename = argv[2];
+    data.input_file = fopen(data.input_filename, "rb");
+    assert(data.input_file);
+    data.output_file = fopen(data.output_filename, "wb");
+    assert(data.output_file);
+
+    fread(&data.V, sizeof(int), 1, data.input_file);
+    fread(&data.E, sizeof(int), 1, data.input_file);
+#ifdef PROFILING
+    fprintf(stderr, "V: %d, E: %d\n", data.V, data.E);
+#endif  // PROFILING
+
+    solve<3, 26, 78>(&data);
+
+    fclose(data.input_file);
+    fclose(data.output_file);
+    return 0;
+}
+
+double get_timestamp() {
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
 template <int nt, int ts, int bs>
-int solve(int argc, char **argv) {
-    assert(argc == 3);
+void solve(Data *data) {
+#ifdef PROFILING
+    fprintf(stderr, "nt: %d, ts: %d, bs: %d\n", nt, ts, bs);
+#endif  // PROFILING
 
-    char *input_filename = argv[1];
-    char *output_filename = argv[2];
     FILE *input_file;
     FILE *output_file;
-    int ncpus = omp_get_max_threads();
-    int device_cnt;
     int V, E;
     int *edge;
     int *dist;
     int VP;
     int nblocks;
     hipDeviceProp_t deviceProp;
+    double start_ts;
 
-    hipGetDeviceCount(&device_cnt);
+    input_file = data->input_file;
+    output_file = data->output_file;
+    V = data->V;
+    E = data->E;
+    start_ts = get_timestamp();
+
     hipSetDevice(0);
     hipGetDeviceProperties(&deviceProp, 0);
-
-    /* input */
-    input_file = fopen(input_filename, "rb");
-    assert(input_file);
-    fread(&V, sizeof(int), 1, input_file);
-    fread(&E, sizeof(int), 1, input_file);
-    edge = (int *)malloc(sizeof(int) * 3 * E);
-    fread(edge, sizeof(int), 3 * E, input_file);
-    dist = (int *)malloc(sizeof(int) * V * V);
-    fclose(input_file);
+#ifdef PROFILING
+    fprintf(stderr, "totalGlobalMem: %.3f GB\n", (float)deviceProp.totalGlobalMem / (1 << 30));
+#endif  // PROFILING
 
     nblocks = (int)ceilf(float(V) / bs);
     VP = nblocks * bs;
 
+    /* input */
+    edge = (int *)malloc(sizeof(int) * 3 * E);
+    fread(edge, sizeof(int), 3 * E, input_file);
+    dist = (int *)malloc(sizeof(int) * V * V);
+
     /* calculate */
-    if ((size_t)VP * VP * 2 + 2 * 3 * E + V * V <= deviceProp.totalGlobalMem / 4) {
-        int *edge_dev;
-        int *dist_dev;
-        int *blk_dist_dev;
-        size_t blk_pitch;
+    int *edge_dev;
+    int *blk_dist_dev;
+    size_t blk_pitch;
 
-        hipHostRegister(edge, sizeof(int) * 3 * E, hipHostRegisterReadOnly);
-        hipMalloc(&edge_dev, sizeof(int) * 3 * E);
-        hipHostRegister(dist, sizeof(int) * V * V, hipHostRegisterDefault);
-        hipMalloc(&blk_dist_dev, sizeof(int) * bs * bs * nblocks * nblocks);
-        blk_pitch = bs * bs;
+    hipHostRegister(edge, sizeof(int) * 3 * E, hipHostRegisterReadOnly);
+    hipMalloc(&edge_dev, sizeof(int) * 3 * E);
+    hipHostRegister(dist, sizeof(int) * V * V, hipHostRegisterDefault);
+    hipMalloc(&blk_dist_dev, sizeof(int) * bs * bs * nblocks * nblocks);
+    blk_pitch = bs * bs;
 
-        hipMemcpy(edge_dev, edge, sizeof(int) * 3 * E, hipMemcpyDefault);
+    hipMemcpy(edge_dev, edge, sizeof(int) * 3 * E, hipMemcpyHostToDevice);
 
-        init_dist<nt, ts, bs><<<dim3(VP / ts, VP / ts), dim3(ts, ts)>>>(blk_dist_dev, blk_pitch, nblocks);
-        build_dist<nt, ts, bs><<<(int)ceilf((float)E / (ts * ts)), ts * ts>>>(edge_dev, E, blk_dist_dev, blk_pitch, nblocks);
-        hipFree(edge_dev);
+    init_dist<nt, ts, bs><<<dim3(VP / ts, VP / ts), dim3(ts, ts)>>>(blk_dist_dev, blk_pitch, nblocks);
+    build_dist<nt, ts, bs><<<(int)ceilf((float)E / (ts * ts)), ts * ts>>>(edge_dev, E, blk_dist_dev, blk_pitch, nblocks);
 
-        dim3 blk(ts, ts);
-        for (int k = 0, nk = nblocks - 1; k < nblocks; k++, nk--) {
-            /* Phase 1 */
-            proc_1_glob<nt, ts, bs><<<1, blk>>>(blk_dist_dev, k, blk_pitch, nblocks);
-            /* Phase 2 */
-            proc_2_glob<nt, ts, bs><<<dim3(nblocks - 1, 2), blk>>>(blk_dist_dev, 0, k, blk_pitch, nblocks);
-            /* Phase 3 */
-            proc_3_glob<nt, ts, bs><<<dim3(nblocks - 1, nblocks - 1), blk>>>(blk_dist_dev, 0, 0, k, blk_pitch, nblocks);
-        }
+    hipHostUnregister(edge);
+    hipFree(edge_dev);
 
-        hipMalloc(&dist_dev, sizeof(int) * VP * VP);
-        copy_dist<nt, ts, bs><<<dim3(VP / ts, VP / ts), dim3(ts, ts)>>>(blk_dist_dev, blk_pitch, dist_dev, VP, nblocks);
-        hipMemcpy2D(dist, sizeof(int) * V, dist_dev, sizeof(int) * VP, sizeof(int) * V, V, hipMemcpyDefault);
-
-        hipDeviceSynchronize();
-
-        hipFree(blk_dist_dev);
-        hipFree(dist_dev);
-    } else {
-        int *edge_dev;
-        int *dist_dev;
-
-        hipHostRegister(edge, sizeof(int) * 3 * E, hipHostRegisterReadOnly);
-        hipMalloc(&edge_dev, sizeof(int) * 3 * E);
-        hipHostRegister(dist, sizeof(int) * V * V, hipHostRegisterDefault);
-        hipMalloc(&dist_dev, sizeof(int) * VP * VP);
-
-        hipMemcpy(edge_dev, edge, sizeof(int) * 3 * E, hipMemcpyDefault);
-
-        init_blk_dist<<<dim3(VP / ts, VP / ts), dim3(ts, ts)>>>(dist_dev, VP);
-        build_blk_dist<<<(int)ceilf((float)E / (ts * ts)), ts * ts>>>(edge_dev, E, dist_dev, VP);
-        hipFree(edge_dev);
-
-        dim3 blk(ts, ts);
-        for (int k = 0, nk = nblocks - 1; k < nblocks; k++, nk--) {
-            /* Phase 1 */
-            proc_1_blk_glob<nt, ts, bs><<<1, blk>>>(dist_dev, k, VP);
-            /* Phase 2 */
-            proc_2_blk_glob<nt, ts, bs><<<dim3(nblocks - 1, 2), blk>>>(dist_dev, 0, k, VP);
-            /* Phase 3 */
-            proc_3_blk_glob<nt, ts, bs><<<dim3(nblocks - 1, nblocks - 1), blk>>>(dist_dev, 0, 0, k, VP);
-        }
-
-        hipMemcpy2D(dist, sizeof(int) * V, dist_dev, sizeof(int) * VP, sizeof(int) * V, V, hipMemcpyDefault);
-
-        hipDeviceSynchronize();
-        hipFree(dist_dev);
+    dim3 blk(ts, ts);
+    for (int k = 0; k < nblocks; k++) {
+        /* Phase 1 */
+        proc_1_glob<nt, ts, bs><<<1, blk>>>(blk_dist_dev, k, blk_pitch, nblocks);
+        /* Phase 2 */
+        proc_2_glob<nt, ts, bs><<<dim3(nblocks - 1, 2), blk>>>(blk_dist_dev, 0, k, blk_pitch, nblocks);
+        /* Phase 3 */
+        proc_3_glob<nt, ts, bs><<<dim3(nblocks - 1, nblocks - 1), blk>>>(blk_dist_dev, 0, 0, k, blk_pitch, nblocks);
     }
+
+    hipDeviceSynchronize();
+
+    int num_dist_dev = std::min(
+        (int)((deviceProp.totalGlobalMem - (size_t)bs * bs * nblocks * nblocks * sizeof(int)) / ((size_t)VP * bs * sizeof(int))),
+        32);
+    int *dist_dev[32];
+    hipStream_t stream[32];
+    for (int i = 0; i < num_dist_dev; i++) {
+        hipStreamCreate(&stream[i]);
+    }
+    for (int i = 0; i < num_dist_dev; i++) {
+        hipMalloc(&dist_dev[i], sizeof(int) * VP * bs);
+    }
+    for (int chunk = 0; chunk < VP; chunk += bs) {
+        int dev_height = std::min(bs, VP - chunk);
+        int host_height = std::min(bs, V - chunk);
+        int dev_idx = (chunk / bs) % num_dist_dev;
+        copy_dist<nt, ts, bs><<<dim3(VP / ts, dev_height / ts), dim3(ts, ts), 0, stream[dev_idx]>>>(
+            blk_dist_dev + chunk * bs * nblocks,
+            blk_pitch,
+            dist_dev[dev_idx],
+            VP,
+            nblocks);
+        hipMemcpy2DAsync(dist + chunk * V, sizeof(int) * V, dist_dev[dev_idx], sizeof(int) * VP, sizeof(int) * V, host_height, hipMemcpyDeviceToHost, stream[dev_idx]);
+    }
+    for (int i = 0; i < num_dist_dev; i++) {
+        hipStreamSynchronize(stream[i]);
+    }
+    for (int i = 0; i < num_dist_dev; i++) {
+        hipStreamDestroy(stream[i]);
+    }
+    for (int i = 0; i < num_dist_dev; i++) {
+        hipFree(dist_dev[i]);
+    }
+
+    hipHostUnregister(dist);
+    hipFree(blk_dist_dev);
+
     /* output */
-    output_file = fopen(output_filename, "w");
-    assert(output_file);
     fwrite(dist, 1, sizeof(int) * V * V, output_file);
-    fclose(output_file);
+
+#ifdef PROFILING
+    fprintf(stderr, "Took: %lf\n", get_timestamp() - start_ts);
+#endif  // PROFILING
 
     free(edge);
     free(dist);
-    return 0;
 }
 
 template <int nt, int ts, int bs>

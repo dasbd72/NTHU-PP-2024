@@ -170,11 +170,11 @@ void solve(Data *data) {
 
     cudaDeviceSynchronize();
 
-    int num_dist_dev = min(
+    int num_dist_dev = std::min(
         (int)((deviceProp.totalGlobalMem - (size_t)bs * bs * nblocks * nblocks * sizeof(int)) / ((size_t)VP * bs * sizeof(int))),
         32);
-    int *dist_dev[num_dist_dev];
-    cudaStream_t stream[num_dist_dev];
+    int *dist_dev[32];
+    cudaStream_t stream[32];
     for (int i = 0; i < num_dist_dev; i++) {
         cudaStreamCreate(&stream[i]);
     }
@@ -182,8 +182,8 @@ void solve(Data *data) {
         cudaMalloc(&dist_dev[i], sizeof(int) * VP * bs);
     }
     for (int chunk = 0; chunk < VP; chunk += bs) {
-        int dev_height = min(bs, VP - chunk);
-        int host_height = min(bs, V - chunk);
+        int dev_height = std::min(bs, VP - chunk);
+        int host_height = std::min(bs, V - chunk);
         int dev_idx = (chunk / bs) % num_dist_dev;
         copy_dist<nt, ts, bs><<<dim3(VP / ts, dev_height / ts), dim3(ts, ts), 0, stream[dev_idx]>>>(
             blk_dist_dev + chunk * bs * nblocks,
