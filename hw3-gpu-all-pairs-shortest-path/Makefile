@@ -4,6 +4,16 @@ NVFLAGS = -std=c++11 -O3 -Xptxas="-v" -arch=sm_61
 HIPCCFLAGS = -std=c++11 -O3 --offload-arch=gfx90a
 LDFLAGS = -lm
 
+ifeq ($(PROFILING), 1)
+	CXXFLAGS += -DPROFILING
+	NVFLAGS += -DPROFILING
+	HIPCCFLAGS += -DPROFILING
+endif
+
+ifeq ($(SANITIZE), 1)
+	NVFLAGS += -Xcompiler -fsanitize=address -g -G
+endif
+
 hw3-1: CXXFLAGS += -pthread -DMANUAL_SIMD -DNO_FINALIZE
 hw3-2: NVFLAGS += -Xcompiler -fopenmp
 hw3-3: NVFLAGS += -Xcompiler -fopenmp
