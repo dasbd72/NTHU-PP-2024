@@ -14,6 +14,7 @@ class Args:
     nsys_args = ""
     nvprof_args = ""
     report_name = None
+    quiet = False
     testcase = None
 
 
@@ -65,6 +66,12 @@ def parse_arguments() -> Args:
         type=str,
         help="Name of the report (only used with --profiler=nsys)",
     )
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress output",
+    )
     parser.add_argument("testcase", type=str, help="Testcase name")
     args: Args = parser.parse_args()
     return args
@@ -104,7 +111,7 @@ def run_testcase(testcase, args: Args):
     ensure_output_directory_exists(outputs_dir)
 
     # Build the program
-    if build() != 0:
+    if build(args.quiet) != 0:
         print("Build failed")
         exit(1)
 
@@ -114,7 +121,9 @@ def run_testcase(testcase, args: Args):
 
     # Verification if needed
     if args.verify:
-        if not verify_output(outputs_bin, testcase_bin, args.epsilon):
+        if not verify_output(
+            outputs_bin, testcase_bin, args.epsilon, args.quiet
+        ):
             print("Verification failed")
             exit(1)
     exit(0)
@@ -145,28 +154,35 @@ def execute_program(testcase_in, outputs_bin, args: Args):
     else:
         cmd = f"{cmd_srun} {cmd_prog}"
 
-    print(cmd)
-    print("========== Program Output ==========")
+    if not args.quiet:
+        print(cmd)
+        print("========== Program Output ==========")
     code = os.system(cmd)
-    print("====================================")
-    print(f"{cmd} finished with code {code}")
+    if not args.quiet:
+        print("====================================")
+        print(f"{cmd} finished with code {code}")
 
     if code != 0:
         print("Execution failed")
         exit(1)
 
 
-def verify_output(outputs_bin, testcase_bin, epsilon):
+def verify_output(outputs_bin, testcase_bin, epsilon, quiet=False):
     """Verifies the output of the program."""
-    print("============ Verifying =============")
-    print("Result: ", end="", flush=True)
+    if not quiet:
+        print("============ Verifying =============")
+        print("Result: ", end="", flush=True)
     os.chdir("utils")
-    os.system("make diff")
+    if not quiet:
+        os.system("make diff")
+    else:
+        os.system("make diff -q")
     os.chdir("..")
     code = (
         os.system(f"./utils/diff {testcase_bin} {outputs_bin} {epsilon}") == 0
     )
-    print("====================================")
+    if not quiet:
+        print("====================================")
     return code
 
 
