@@ -20,7 +20,7 @@ hw3-3: NVFLAGS += -Xcompiler -fopenmp
 hw3-2-amd: HIPCCFLAGS += -fopenmp
 hw3-3-amd: HIPCCFLAGS += -fopenmp
 
-EXES = hw3-1 hw3-2 hw3-3
+EXES = hw3-1 hw3-2 hw3-3 hw3-2-amd hw3-3-amd
 
 .PHONY: all clean
 
