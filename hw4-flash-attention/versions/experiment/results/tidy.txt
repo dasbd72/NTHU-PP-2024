@@ -1,0 +1,118 @@
+1
+
+Kernel Execution Time
+35.998
+36.000
+35.983
+Avg: 35.993
+
+shared_ld_bank_conflict  6068
+shared_st_bank_conflict 14411
+     achieved_occupancy   0.124910
+          sm_efficiency     56.85%
+         gld_throughput 37.185GB/s
+         gst_throughput 4.3747GB/s
+ shared_load_throughput 1161.9GB/s
+shared_store_throughput 83.563GB/s
+
+2
+
+Kernel Execution Time
+41.242
+36.128
+36.065
+Avg: 37.812
+
+shared_ld_bank_conflict  6068
+shared_st_bank_conflict 14411
+     achieved_occupancy   0.124893
+          sm_efficiency     55.36%
+         gld_throughput 35.744GB/s
+         gst_throughput 4.2052GB/s
+ shared_load_throughput 1116.9GB/s
+shared_store_throughput 80.325GB/s
+
+3
+
+Kernel Execution Time
+39.680
+39.680
+39.745
+Avg: 39.702
+
+shared_ld_bank_conflict  6068
+shared_st_bank_conflict 14411
+     achieved_occupancy   0.124753
+          sm_efficiency     55.14%
+         gld_throughput 49.394GB/s
+         gst_throughput 16.465GB/s
+ shared_load_throughput 1093.2GB/s
+shared_store_throughput 78.625GB/s
+
+4
+
+Kernel Execution Time
+60.833
+60.830
+60.561
+Avg: 60.741
+
+shared_ld_bank_conflict 691010
+shared_st_bank_conflict 189629
+     achieved_occupancy   0.499009
+          sm_efficiency     56.75%
+         gld_throughput 90.578GB/s
+         gst_throughput 2.7448GB/s
+ shared_load_throughput 1793.1GB/s
+shared_store_throughput 369.97GB/s
+
+5
+
+Kernel Execution Time
+73.934
+74.269
+74.498
+Avg: 74.234
+
+shared_ld_bank_conflict 691010
+shared_st_bank_conflict 189629
+     achieved_occupancy   0.499009
+          sm_efficiency     56.66%
+         gld_throughput 92.948GB/s
+         gst_throughput 2.8166GB/s
+ shared_load_throughput 1840.0GB/s
+shared_store_throughput 379.65GB/s
+
+6
+
+Kernel Execution Time
+60.837
+59.260
+59.260
+Avg: 59.786
+
+shared_ld_bank_conflict 691010
+shared_st_bank_conflict 189629
+     achieved_occupancy   0.498996
+          sm_efficiency     56.84%
+         gld_throughput 79.023GB/s
+         gst_throughput 2.3946GB/s
+ shared_load_throughput 1564.4GB/s
+shared_store_throughput 322.77GB/s
+
+7
+
+Kernel Execution Time
+190.16
+189.91
+189.94
+Avg: 189.67
+
+shared_ld_bank_conflict NaN
+shared_st_bank_conflict NaN
+     achieved_occupancy   0.499778
+          sm_efficiency     53.24%
+         gld_throughput 567.27GB/s
+         gst_throughput 34.364GB/s
+ shared_load_throughput NaN
+shared_store_throughput NaN

@@ -1,0 +1,305 @@
+Results 1
+Result 0
+Number of floats: 1310720
+All values are the same
+==1004080== NVPROF is profiling process 1004080, command: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+B: 160, N: 128, d: 64
+took: 0.151788
+==1004080== Profiling application: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+==1004080== Profiling result:
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+ GPU activities:   53.01%  3.9925ms        54  73.934us  59.969us  116.64us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.86%  2.2489ms       162  13.882us  7.6800us  26.784us  [CUDA memcpy HtoD]
+                    8.01%  603.18us        54  11.169us  4.8640us  21.344us  [CUDA memcpy DtoH]
+                    6.75%  508.30us       162  3.1370us  1.6960us  7.9040us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.38%  179.27us        54  3.3190us  1.3760us  6.3690us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   84.94%  86.827ms        54  1.6079ms  1.8220us  86.331ms  cudaStreamCreate
+                    9.51%  9.7240ms         4  2.4310ms  2.3675ms  2.5732ms  cudaHostAlloc
+                    1.71%  1.7495ms       270  6.4790us  2.9350us  457.45us  cudaLaunchKernel
+                    1.36%  1.3927ms         1  1.3927ms  1.3927ms  1.3927ms  cuDeviceGetPCIBusId
+                    0.83%  845.50us        54  15.657us     654ns  327.06us  cudaStreamSynchronize
+                    0.67%  683.60us       216  3.1640us  2.0270us  54.812us  cudaMemcpyAsync
+                    0.65%  668.94us         9  74.326us  57.849us  99.763us  cudaMalloc
+                    0.16%  161.70us        54  2.9940us  2.1320us  21.233us  cudaStreamDestroy
+                    0.15%  149.97us       114  1.3150us      94ns  63.962us  cuDeviceGetAttribute
+                    0.01%  14.155us         1  14.155us  14.155us  14.155us  cuDeviceGetName
+                    0.00%  1.7730us         3     591ns     123ns  1.4760us  cuDeviceGetCount
+                    0.00%     500ns         2     250ns     115ns     385ns  cuDeviceGet
+                    0.00%     448ns         1     448ns     448ns     448ns  cuDeviceTotalMem
+                    0.00%     370ns         1     370ns     370ns     370ns  cuModuleGetLoadingMode
+                    0.00%     273ns         1     273ns     273ns     273ns  cuDeviceGetUuid
+
+==1004080== NVTX result:
+==1004080==   Thread "<unnamed>" (id = 3553370112)
+==1004080==     Domain "<unnamed>"
+==1004080==       Range "flash_attention_declare"
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+          Range:  100.00%  2.6390ms         1  2.6390ms  2.6390ms  2.6390ms  flash_attention_declare
+ GPU activities:   53.01%  3.9925ms        54  73.934us  59.969us  116.64us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.86%  2.2489ms       162  13.882us  7.6800us  26.784us  [CUDA memcpy HtoD]
+                    8.01%  603.18us        54  11.169us  4.8640us  21.344us  [CUDA memcpy DtoH]
+                    6.75%  508.30us       162  3.1370us  1.6960us  7.9040us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.38%  179.27us        54  3.3190us  1.3760us  6.3690us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   71.90%  1.7495ms       270  6.4790us  2.9350us  457.45us  cudaLaunchKernel
+                   28.10%  683.60us       216  3.1640us  2.0270us  54.812us  cudaMemcpyAsync
+
+==1004080==       Range "flash_attention_execute"
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+          Range:  100.00%  3.4989ms         1  3.4989ms  3.4989ms  3.4989ms  flash_attention_execute
+ GPU activities:   53.01%  3.9925ms        54  73.934us  59.969us  116.64us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.86%  2.2489ms       162  13.882us  7.6800us  26.784us  [CUDA memcpy HtoD]
+                    8.01%  603.18us        54  11.169us  4.8640us  21.344us  [CUDA memcpy DtoH]
+                    6.75%  508.30us       162  3.1370us  1.6960us  7.9040us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.38%  179.27us        54  3.3190us  1.3760us  6.3690us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   71.90%  1.7495ms       270  6.4790us  2.9350us  457.45us  cudaLaunchKernel
+                   28.10%  683.60us       216  3.1640us  2.0270us  54.812us  cudaMemcpyAsync
+
+Result 1
+Number of floats: 1310720
+All values are the same
+==1004117== NVPROF is profiling process 1004117, command: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+B: 160, N: 128, d: 64
+took: 0.147458
+==1004117== Profiling application: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+==1004117== Profiling result:
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+ GPU activities:   53.23%  4.0106ms        54  74.269us  60.129us  119.23us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.89%  2.2518ms       162  13.899us  7.5200us  21.953us  [CUDA memcpy HtoD]
+                    7.86%  591.88us        54  10.960us  3.6800us  14.368us  [CUDA memcpy DtoH]
+                    6.57%  494.79us       162  3.0540us  1.6960us  7.6800us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.45%  184.74us        54  3.4210us  1.8560us  9.1210us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   85.70%  85.683ms        54  1.5867ms  1.6580us  85.221ms  cudaStreamCreate
+                    9.84%  9.8430ms         4  2.4607ms  2.3784ms  2.6768ms  cudaHostAlloc
+                    1.86%  1.8579ms       270  6.8800us  3.0840us  439.47us  cudaLaunchKernel
+                    0.81%  810.66us        54  15.012us     623ns  263.58us  cudaStreamSynchronize
+                    0.75%  751.91us       216  3.4810us  2.2440us  54.481us  cudaMemcpyAsync
+                    0.68%  677.37us         9  75.262us  60.293us  102.75us  cudaMalloc
+                    0.17%  173.91us       114  1.5250us      99ns  86.151us  cuDeviceGetAttribute
+                    0.16%  156.90us        54  2.9050us  2.0580us  22.203us  cudaStreamDestroy
+                    0.02%  16.073us         1  16.073us  16.073us  16.073us  cuDeviceGetName
+                    0.01%  9.2970us         1  9.2970us  9.2970us  9.2970us  cuDeviceGetPCIBusId
+                    0.00%  1.2900us         3     430ns     106ns  1.0630us  cuDeviceGetCount
+                    0.00%     638ns         2     319ns     137ns     501ns  cuDeviceGet
+                    0.00%     440ns         1     440ns     440ns     440ns  cuDeviceTotalMem
+                    0.00%     340ns         1     340ns     340ns     340ns  cuModuleGetLoadingMode
+                    0.00%     264ns         1     264ns     264ns     264ns  cuDeviceGetUuid
+
+==1004117== NVTX result:
+==1004117==   Thread "<unnamed>" (id = 231440384)
+==1004117==     Domain "<unnamed>"
+==1004117==       Range "flash_attention_declare"
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+          Range:  100.00%  2.8246ms         1  2.8246ms  2.8246ms  2.8246ms  flash_attention_declare
+ GPU activities:   53.23%  4.0106ms        54  74.269us  60.129us  119.23us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.89%  2.2518ms       162  13.899us  7.5200us  21.953us  [CUDA memcpy HtoD]
+                    7.86%  591.88us        54  10.960us  3.6800us  14.368us  [CUDA memcpy DtoH]
+                    6.57%  494.79us       162  3.0540us  1.6960us  7.6800us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.45%  184.74us        54  3.4210us  1.8560us  9.1210us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   71.19%  1.8579ms       270  6.8800us  3.0840us  439.47us  cudaLaunchKernel
+                   28.81%  751.91us       216  3.4810us  2.2440us  54.481us  cudaMemcpyAsync
+
+==1004117==       Range "flash_attention_execute"
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+          Range:  100.00%  3.6493ms         1  3.6493ms  3.6493ms  3.6493ms  flash_attention_execute
+ GPU activities:   53.23%  4.0106ms        54  74.269us  60.129us  119.23us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.89%  2.2518ms       162  13.899us  7.5200us  21.953us  [CUDA memcpy HtoD]
+                    7.86%  591.88us        54  10.960us  3.6800us  14.368us  [CUDA memcpy DtoH]
+                    6.57%  494.79us       162  3.0540us  1.6960us  7.6800us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.45%  184.74us        54  3.4210us  1.8560us  9.1210us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   71.19%  1.8579ms       270  6.8800us  3.0840us  439.47us  cudaLaunchKernel
+                   28.81%  751.91us       216  3.4810us  2.2440us  54.481us  cudaMemcpyAsync
+
+Result 2
+Number of floats: 1310720
+All values are the same
+==1004154== NVPROF is profiling process 1004154, command: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+B: 160, N: 128, d: 64
+took: 0.147265
+==1004154== Profiling application: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+==1004154== Profiling result:
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+ GPU activities:   52.80%  4.0229ms        54  74.498us  60.160us  102.91us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.67%  2.2607ms       162  13.955us  7.3610us  22.240us  [CUDA memcpy HtoD]
+                    8.04%  612.32us        54  11.339us  3.6160us  15.296us  [CUDA memcpy DtoH]
+                    6.77%  516.10us       162  3.1850us  1.2480us  10.240us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.72%  206.88us        54  3.8310us  1.4400us  8.6720us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   85.90%  86.126ms        54  1.5949ms  1.6960us  85.666ms  cudaStreamCreate
+                    9.83%  9.8574ms         4  2.4643ms  2.3385ms  2.6985ms  cudaHostAlloc
+                    1.71%  1.7190ms       270  6.3660us  3.1210us  435.81us  cudaLaunchKernel
+                    0.82%  822.32us        54  15.228us     620ns  223.80us  cudaStreamSynchronize
+                    0.72%  723.67us       216  3.3500us  2.2630us  49.741us  cudaMemcpyAsync
+                    0.66%  660.39us         9  73.376us  56.112us  95.040us  cudaMalloc
+                    0.17%  168.21us        54  3.1140us  2.0690us  24.016us  cudaStreamDestroy
+                    0.16%  160.87us       114  1.4110us     103ns  73.704us  cuDeviceGetAttribute
+                    0.01%  14.227us         1  14.227us  14.227us  14.227us  cuDeviceGetName
+                    0.01%  9.3080us         1  9.3080us  9.3080us  9.3080us  cuDeviceGetPCIBusId
+                    0.00%  1.1200us         3     373ns     113ns     887ns  cuDeviceGetCount
+                    0.00%     506ns         2     253ns     114ns     392ns  cuDeviceGet
+                    0.00%     409ns         1     409ns     409ns     409ns  cuDeviceTotalMem
+                    0.00%     293ns         1     293ns     293ns     293ns  cuModuleGetLoadingMode
+                    0.00%     233ns         1     233ns     233ns     233ns  cuDeviceGetUuid
+
+==1004154== NVTX result:
+==1004154==   Thread "<unnamed>" (id = 2101649408)
+==1004154==     Domain "<unnamed>"
+==1004154==       Range "flash_attention_declare"
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+          Range:  100.00%  2.6765ms         1  2.6765ms  2.6765ms  2.6765ms  flash_attention_declare
+ GPU activities:   52.80%  4.0229ms        54  74.498us  60.160us  102.91us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.67%  2.2607ms       162  13.955us  7.3610us  22.240us  [CUDA memcpy HtoD]
+                    8.04%  612.32us        54  11.339us  3.6160us  15.296us  [CUDA memcpy DtoH]
+                    6.77%  516.10us       162  3.1850us  1.2480us  10.240us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.72%  206.88us        54  3.8310us  1.4400us  8.6720us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   70.37%  1.7190ms       270  6.3660us  3.1210us  435.81us  cudaLaunchKernel
+                   29.63%  723.67us       216  3.3500us  2.2630us  49.741us  cudaMemcpyAsync
+
+==1004154==       Range "flash_attention_execute"
+            Type  Time(%)      Time     Calls       Avg       Min       Max  Name
+          Range:  100.00%  3.5135ms         1  3.5135ms  3.5135ms  3.5135ms  flash_attention_execute
+ GPU activities:   52.80%  4.0229ms        54  74.498us  60.160us  102.91us  void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+                   29.67%  2.2607ms       162  13.955us  7.3610us  22.240us  [CUDA memcpy HtoD]
+                    8.04%  612.32us        54  11.339us  3.6160us  15.296us  [CUDA memcpy DtoH]
+                    6.77%  516.10us       162  3.1850us  1.2480us  10.240us  void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+                    2.72%  206.88us        54  3.8310us  1.4400us  8.6720us  void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+      API calls:   70.37%  1.7190ms       270  6.3660us  3.1210us  435.81us  cudaLaunchKernel
+                   29.63%  723.67us       216  3.3500us  2.2630us  49.741us  cudaMemcpyAsync
+
+Results 2
+Result 0
+Number of floats: 1310720
+All values are the same
+==1004195== NVPROF is profiling process 1004195, command: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+B: 160, N: 128, d: 64
+==1004195== Some kernel(s) will be replayed on device 0 in order to collect all events/metrics.
+took: 14.962203
+==1004195== Profiling application: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+==1004195== Profiling result:
+==1004195== Event result:
+Invocations                                Event Name         Min         Max         Avg       Total
+Device "NVIDIA GeForce GTX 1080 (0)"
+    Kernel: void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+        162                   shared_ld_bank_conflict           0           0           0           0
+        162                   shared_st_bank_conflict           0           0           0           0
+    Kernel: void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+         54                   shared_ld_bank_conflict           0           0           0           0
+         54                   shared_st_bank_conflict           0           0           0           0
+    Kernel: void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+         54                   shared_ld_bank_conflict      233216      699648      691010    37314560
+         54                   shared_st_bank_conflict       64000      192000      189629    10240000
+
+==1004195== Metric result:
+Invocations                               Metric Name                        Metric Description         Min         Max         Avg
+Device "NVIDIA GeForce GTX 1080 (0)"
+    Kernel: void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+        162                        achieved_occupancy                        Achieved Occupancy    0.468976    0.587211    0.555739
+        162                             sm_efficiency                   Multiprocessor Activity       9.78%      42.25%      30.07%
+        162                            gld_throughput                    Global Load Throughput  11.560GB/s  33.659GB/s  31.426GB/s
+        162                            gst_throughput                   Global Store Throughput  11.560GB/s  33.659GB/s  31.426GB/s
+        162                    shared_load_throughput             Shared Memory Load Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+        162                   shared_store_throughput            Shared Memory Store Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+    Kernel: void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+         54                        achieved_occupancy                        Achieved Occupancy    0.481266    0.581797    0.554644
+         54                             sm_efficiency                   Multiprocessor Activity      15.00%      40.80%      33.65%
+         54                            gld_throughput                    Global Load Throughput  10.776GB/s  29.802GB/s  27.733GB/s
+         54                            gst_throughput                   Global Store Throughput  10.776GB/s  29.802GB/s  27.733GB/s
+         54                    shared_load_throughput             Shared Memory Load Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+         54                   shared_store_throughput            Shared Memory Store Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+    Kernel: void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+         54                        achieved_occupancy                        Achieved Occupancy    0.498977    0.499034    0.499009
+         54                             sm_efficiency                   Multiprocessor Activity      19.19%      57.73%      56.66%
+         54                            gld_throughput                    Global Load Throughput  28.251GB/s  96.900GB/s  92.948GB/s
+         54                            gst_throughput                   Global Store Throughput  876.63MB/s  2.9364GB/s  2.8166GB/s
+         54                    shared_load_throughput             Shared Memory Load Throughput  559.26GB/s  1918.3GB/s  1840.0GB/s
+         54                   shared_store_throughput            Shared Memory Store Throughput  115.39GB/s  395.79GB/s  379.65GB/s
+Result 1
+Number of floats: 1310720
+All values are the same
+==1004233== NVPROF is profiling process 1004233, command: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+B: 160, N: 128, d: 64
+==1004233== Some kernel(s) will be replayed on device 0 in order to collect all events/metrics.
+took: 15.083589
+==1004233== Profiling application: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+==1004233== Profiling result:
+==1004233== Event result:
+Invocations                                Event Name         Min         Max         Avg       Total
+Device "NVIDIA GeForce GTX 1080 (0)"
+    Kernel: void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+        162                   shared_ld_bank_conflict           0           0           0           0
+        162                   shared_st_bank_conflict           0           0           0           0
+    Kernel: void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+         54                   shared_ld_bank_conflict           0           0           0           0
+         54                   shared_st_bank_conflict           0           0           0           0
+    Kernel: void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+         54                   shared_ld_bank_conflict      233216      699648      691010    37314560
+         54                   shared_st_bank_conflict       64000      192000      189629    10240000
+
+==1004233== Metric result:
+Invocations                               Metric Name                        Metric Description         Min         Max         Avg
+Device "NVIDIA GeForce GTX 1080 (0)"
+    Kernel: void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+        162                        achieved_occupancy                        Achieved Occupancy    0.464744    0.586703    0.559691
+        162                             sm_efficiency                   Multiprocessor Activity       9.93%      42.11%      29.57%
+        162                            gld_throughput                    Global Load Throughput  12.149GB/s  30.681GB/s  29.387GB/s
+        162                            gst_throughput                   Global Store Throughput  12.149GB/s  30.681GB/s  29.387GB/s
+        162                    shared_load_throughput             Shared Memory Load Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+        162                   shared_store_throughput            Shared Memory Store Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+    Kernel: void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+         54                        achieved_occupancy                        Achieved Occupancy    0.483533    0.567779    0.551355
+         54                             sm_efficiency                   Multiprocessor Activity      15.50%      41.83%      34.39%
+         54                            gld_throughput                    Global Load Throughput  10.776GB/s  27.248GB/s  25.720GB/s
+         54                            gst_throughput                   Global Store Throughput  10.776GB/s  27.248GB/s  25.720GB/s
+         54                    shared_load_throughput             Shared Memory Load Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+         54                   shared_store_throughput            Shared Memory Store Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+    Kernel: void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+         54                        achieved_occupancy                        Achieved Occupancy    0.498972    0.499047    0.499003
+         54                             sm_efficiency                   Multiprocessor Activity      19.21%      57.75%      56.80%
+         54                            gld_throughput                    Global Load Throughput  28.293GB/s  84.474GB/s  83.000GB/s
+         54                            gst_throughput                   Global Store Throughput  877.93MB/s  2.5598GB/s  2.5151GB/s
+         54                    shared_load_throughput             Shared Memory Load Throughput  560.09GB/s  1672.3GB/s  1643.1GB/s
+         54                   shared_store_throughput            Shared Memory Store Throughput  115.56GB/s  345.03GB/s  339.01GB/s
+Result 2
+Number of floats: 1310720
+All values are the same
+==1133965== NVPROF is profiling process 1133965, command: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+B: 160, N: 128, d: 64
+==1133965== Some kernel(s) will be replayed on device 0 in order to collect all events/metrics.
+took: 15.197221
+==1133965== Profiling application: ./hw4 testcases/t02 /share/judge_dir/.judge_exe.pp24s105/t02.out
+==1133965== Profiling result:
+==1133965== Event result:
+Invocations                                Event Name         Min         Max         Avg       Total
+Device "NVIDIA GeForce GTX 1080 (0)"
+    Kernel: void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+        162                   shared_ld_bank_conflict           0           0           0           0
+        162                   shared_st_bank_conflict           0           0           0           0
+    Kernel: void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+         54                   shared_ld_bank_conflict           0           0           0           0
+         54                   shared_st_bank_conflict           0           0           0           0
+    Kernel: void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+         54                   shared_ld_bank_conflict      233216      699648      691010    37314560
+         54                   shared_st_bank_conflict       64000      192000      189629    10240000
+
+==1133965== Metric result:
+Invocations                               Metric Name                        Metric Description         Min         Max         Avg
+Device "NVIDIA GeForce GTX 1080 (0)"
+    Kernel: void cuda_pad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+        162                        achieved_occupancy                        Achieved Occupancy    0.459589    0.586952    0.556199
+        162                             sm_efficiency                   Multiprocessor Activity       9.78%      42.51%      29.50%
+        162                            gld_throughput                    Global Load Throughput  12.072GB/s  30.518GB/s  29.205GB/s
+        162                            gst_throughput                   Global Store Throughput  12.072GB/s  30.518GB/s  29.205GB/s
+        162                    shared_load_throughput             Shared Memory Load Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+        162                   shared_store_throughput            Shared Memory Store Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+    Kernel: void cuda_unpad_buffer_kernel<float>(float*, float*, int, int, int, int, int, int)
+         54                        achieved_occupancy                        Achieved Occupancy    0.480674    0.571909    0.557078
+         54                             sm_efficiency                   Multiprocessor Activity      14.70%      42.36%      34.55%
+         54                            gld_throughput                    Global Load Throughput  10.310GB/s  28.468GB/s  25.637GB/s
+         54                            gst_throughput                   Global Store Throughput  10.310GB/s  28.468GB/s  25.637GB/s
+         54                    shared_load_throughput             Shared Memory Load Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+         54                   shared_store_throughput            Shared Memory Store Throughput  0.00000B/s  0.00000B/s  0.00000B/s
+    Kernel: void flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>(float*, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, flash_attention::flash_attention_kernel<int=32, int=32, int=32, int=64, int=32, int=32>, int, int, int, int, int)
+         54                        achieved_occupancy                        Achieved Occupancy    0.498968    0.499027    0.499007
+         54                             sm_efficiency                   Multiprocessor Activity      19.20%      57.75%      56.84%
+         54                            gld_throughput                    Global Load Throughput  28.191GB/s  84.222GB/s  82.772GB/s
+         54                            gst_throughput                   Global Store Throughput  874.79MB/s  2.5522GB/s  2.5082GB/s
+         54                    shared_load_throughput             Shared Memory Load Throughput  558.09GB/s  1667.3GB/s  1638.6GB/s
+         54                   shared_store_throughput            Shared Memory Store Throughput  115.15GB/s  344.00GB/s  338.08GB/s
