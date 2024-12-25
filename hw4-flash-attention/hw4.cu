@@ -332,7 +332,9 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
     float *q = Q + blockIdx.y * N_pad * d_pad + blockIdx.x * br * d_pad;  // (br, d)
     float *k = K + blockIdx.y * N_pad * d_pad;                            // (N, d)
     float *v = V + blockIdx.y * N_pad * d_pad;                            // (N, d)
-    float *l = L + blockIdx.y * N_pad + blockIdx.x * br;                  // (br)
+#ifndef NO_OUTPUT_L
+    float *l = L + blockIdx.y * N_pad + blockIdx.x * br;  // (br)
+#endif                                                    // NO_OUTPUT_L
 
     float scalar = 1.0 / sqrtf(d);
 
@@ -387,9 +389,11 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
             o[y * d_pad + x] = oi[y * bd + x];
         }
     }
+#ifndef NO_OUTPUT_L
     if (threadIdx.x < br) {
         l[threadIdx.x] = lij1[threadIdx.x];
     }
+#endif  // NO_OUTPUT_L
 }
 
 template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
