@@ -12,3 +12,5 @@
 - flash-attention-2-v02.cu
   - v01 No row max
   - Fused qk dot and exp
+- flash-attention-2-v04.cu
+  - Fused QKV buffer
