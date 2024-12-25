@@ -65,21 +65,21 @@ __global__ void cuda_unpad_buffer_kernel(T *out, T *in, int B, int N, int d, int
 
 namespace flash_attention {
 void flash_attention_switch(Data *data);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 void flash_attention(Data *data);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N_pad, int N_q, int N_kv, int d_pad, int d);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void row_max(float *mij1, float *sij, float *mij0, int n);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void minus_max_and_exp(float *pij, float *sij, float *mij1);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void row_sum(float *lij1, float *pij, float *lij0, float *mij0, float *mij1, int n);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void inner_update_o(float *oi, float *pij, float *vj, float *mij0, float *mij1, int n, int d);
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void outer_update_lo(float *lij1, float *oi, float *mij0, float *lij0, int d);
 };  // namespace flash_attention
 
@@ -165,9 +165,9 @@ void flash_attention_switch(Data *data) {
     fread(&data->N, sizeof(int), 1, data->input_file);
     fread(&data->d, sizeof(int), 1, data->input_file);
     if (data->d <= 32) {
-        flash_attention<32, 32, 37, 32, 37, 8, 16>(data);
+        flash_attention<32, 32, 37, 37, 8, 16>(data);
     } else if (data->d <= 64) {
-        flash_attention<32, 32, 37, 32, 69, 8, 32>(data);
+        flash_attention<32, 32, 37, 69, 8, 32>(data);
     }
 
     fclose(data->input_file);
@@ -178,7 +178,7 @@ void flash_attention_switch(Data *data) {
 #endif  // NO_FINALIZE
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 void flash_attention(Data *data) {
     NVTX_RANGE_FUNC();
     int B = data->B;
@@ -188,7 +188,7 @@ void flash_attention(Data *data) {
     fprintf(stderr, "B: %d, N: %d, d: %d\n", B, N, d);
 #endif  // PROFILING
     int bb = (int)ceilf((float)B / 64);
-    int ac_ar_lcm = std::lcm(ac, ar);
+    int ac_ar_lcm = std::lcm(bc, br);
     int N_pad = (int)ceilf((float)N / ac_ar_lcm) * ac_ar_lcm;
     int d_pad;
     if (bd <= 64) {
@@ -227,14 +227,14 @@ void flash_attention(Data *data) {
     // Kernel launch
     const int smem_size = (br * bd +
                            br * bd +
-                           bc * bd +
-                           bc * bd +
+                           bc_pad * bd +
+                           bc_pad * bd +
                            br +
                            br +
                            br +
                            br +
-                           br * bc +
-                           br * bc) *
+                           br * bc_pad +
+                           br * bc_pad) *
                           sizeof(float);
 
     NVTX_RANGE_START(flash_attention_execute);
@@ -259,9 +259,9 @@ void flash_attention(Data *data) {
         cuda_pad_buffer(d_V_pad + i * bb * N_pad * d_pad, d_V + i * bb * N * d, num_batches, N, d, num_batches, N_pad, d_pad, streams[i]);
 
         // Kernel launch
-        dim3 grid((int)ceilf((float)N / ar), num_batches);
+        dim3 grid((int)ceilf((float)N / br), num_batches);
         dim3 block(num_warps * threads_per_warp);
-        flash_attention_kernel<ac, ar, bc, br, bd, num_warps, threads_per_warp><<<grid, block, smem_size, streams[i]>>>(
+        flash_attention_kernel<bc, br, bc_pad, bd, num_warps, threads_per_warp><<<grid, block, smem_size, streams[i]>>>(
             d_O_pad + i * bb * N_pad * d_pad,
             d_Q_pad + i * bb * N_pad * d_pad,
             d_K_pad + i * bb * N_pad * d_pad,
@@ -305,70 +305,70 @@ void flash_attention(Data *data) {
 #endif  // NO_FINALIZE
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N_pad, int N_q, int N_kv, int d_pad, int d) {
     // Thread and block index
     const int tx = threadIdx.x % num_warps;
     const int ty = threadIdx.x / num_warps;
-    const int tc = (int)ceilf((float)N_q / ac);
+    const int tc = (int)ceilf((float)N_q / bc);
 
     // Shared memory allocation
     extern __shared__ float shared_mem[];
-    float *oi = shared_mem;      // (br, bd)
-    float *qi = oi + br * bd;    // (br, bd)
-    float *kj = qi + br * bd;    // (bc, bd)
-    float *vj = kj + bc * bd;    // (bc, bd)
-    float *lij0 = vj + bc * bd;  // (br)
-    float *lij1 = lij0 + br;     // (br)
-    float *mij0 = lij1 + br;     // (br)
-    float *mij1 = mij0 + br;     // (br)
-    float *sij = mij1 + br;      // (br, bc)
-    float *pij = sij + br * bc;  // (br, bc)
+    float *oi = shared_mem;          // (br, bd)
+    float *qi = oi + br * bd;        // (br, bd)
+    float *kj = qi + br * bd;        // (bc_pad, bd)
+    float *vj = kj + bc_pad * bd;    // (bc_pad, bd)
+    float *lij0 = vj + bc_pad * bd;  // (br)
+    float *lij1 = lij0 + br;         // (br)
+    float *mij0 = lij1 + br;         // (br)
+    float *mij1 = mij0 + br;         // (br)
+    float *sij = mij1 + br;          // (br, bc_pad)
+    float *pij = sij + br * bc_pad;  // (br, bc_pad)
 
     float *tmpptr;
 
     // Pointer to global memory
-    float *o = O + blockIdx.y * N_pad * d_pad + blockIdx.x * ar * d_pad;  // (ar, d)
-    float *q = Q + blockIdx.y * N_pad * d_pad + blockIdx.x * ar * d_pad;  // (ar, d)
+    float *o = O + blockIdx.y * N_pad * d_pad + blockIdx.x * br * d_pad;  // (br, d)
+    float *q = Q + blockIdx.y * N_pad * d_pad + blockIdx.x * br * d_pad;  // (br, d)
     float *k = K + blockIdx.y * N_pad * d_pad;                            // (N, d)
     float *v = V + blockIdx.y * N_pad * d_pad;                            // (N, d)
-    float *l = L + blockIdx.y * N_pad + blockIdx.x * ar;                  // (ar)
+    float *l = L + blockIdx.y * N_pad + blockIdx.x * br;                  // (br)
 
     float scalar = 1.0 / sqrtf(d);
 
     // Load O, Q, l, m to shared memory
-    for (int y = ty; y < ar; y += threads_per_warp) {
+    for (int y = ty; y < br; y += threads_per_warp) {
         for (int x = tx; x < d; x += num_warps) {
             oi[y * bd + x] = 0;
             qi[y * bd + x] = q[y * d_pad + x];
         }
     }
-    if (threadIdx.x < ar) {
+    if (threadIdx.x < br) {
         lij0[threadIdx.x] = 0;
 #ifndef NO_ROWMAX
         mij0[threadIdx.x] = FLOAT_MIN;
 #endif  // NO_ROWMAX
     }
     for (int j = 0; j < tc; j++) {
-        int n = min(N_kv - j * ac, ac);
+        int n = min(N_kv - j * bc, bc);
         // Load K and V to shared memory
         for (int x = tx; x < n; x += num_warps) {
             for (int y = ty; y < d; y += threads_per_warp) {
-                kj[x * bd + y] = k[j * ac * d_pad + x * d_pad + y];
-                vj[x * bd + y] = v[j * ac * d_pad + x * d_pad + y];
+                kj[x * bd + y] = k[j * bc * d_pad + x * d_pad + y];
+                vj[x * bd + y] = v[j * bc * d_pad + x * d_pad + y];
             }
         }
         __syncthreads();
-        qk_dot_and_scalar<ac, ar, bc, br, bd, num_warps, threads_per_warp>(sij, qi, kj, d, scalar);
+        qk_dot_and_scalar<bc, br, bc_pad, bd, num_warps, threads_per_warp>(sij, qi, kj, d, scalar);
 #ifndef NO_ROWMAX
         __syncthreads();
-        row_max<ac, ar, bc, br, bd, num_warps, threads_per_warp>(mij1, sij, mij0, n);
+        row_max<bc, br, bc_pad, bd, num_warps, threads_per_warp>(mij1, sij, mij0, n);
 #endif  // NO_ROWMAX
         __syncthreads();
-        minus_max_and_exp<ac, ar, bc, br, bd, num_warps, threads_per_warp>(pij, sij, mij1);
+        minus_max_and_exp<bc, br, bc_pad, bd, num_warps, threads_per_warp>(pij, sij, mij1);
         __syncthreads();
-        row_sum<ac, ar, bc, br, bd, num_warps, threads_per_warp>(lij1, pij, lij0, mij0, mij1, n);
-        inner_update_o<ac, ar, bc, br, bd, num_warps, threads_per_warp>(oi, pij, vj, mij0, mij1, n, d);
+        row_sum<bc, br, bc_pad, bd, num_warps, threads_per_warp>(lij1, pij, lij0, mij0, mij1, n);
+        inner_update_o<bc, br, bc_pad, bd, num_warps, threads_per_warp>(oi, pij, vj, mij0, mij1, n, d);
 #ifndef NO_ROWMAX
         tmpptr = mij0;
         mij0 = mij1;
@@ -379,81 +379,81 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
         lij1 = tmpptr;
         __syncthreads();
     }
-    outer_update_lo<ac, ar, bc, br, bd, num_warps, threads_per_warp>(lij1, oi, mij0, lij0, d);
+    outer_update_lo<bc, br, bc_pad, bd, num_warps, threads_per_warp>(lij1, oi, mij0, lij0, d);
     __syncthreads();
     // Save O, l, m back to global memory
-    for (int y = ty; y < ar; y += threads_per_warp) {
+    for (int y = ty; y < br; y += threads_per_warp) {
         for (int x = tx; x < d; x += num_warps) {
             o[y * d_pad + x] = oi[y * bd + x];
         }
     }
-    if (threadIdx.x < ar) {
+    if (threadIdx.x < br) {
         l[threadIdx.x] = lij1[threadIdx.x];
     }
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar) {
     int tx = threadIdx.x % num_warps;
     int ty = threadIdx.x / num_warps;
-    for (int y = ty; y < ar; y += threads_per_warp) {
-        for (int x = tx; x < ac; x += num_warps) {
+    for (int y = ty; y < br; y += threads_per_warp) {
+        for (int x = tx; x < bc; x += num_warps) {
             float sum = 0.0F;
             for (int t = 0; t < d; t++) {
                 sum += q[y * bd + t] * k[x * bd + t];
             }
-            out[y * bc + x] = sum * scalar;
+            out[y * bc_pad + x] = sum * scalar;
         }
     }
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void row_max(float *mij1, float *sij, float *mij0, int n) {
-    for (int y = threadIdx.x; y < ar; y += blockDim.x) {
+    for (int y = threadIdx.x; y < br; y += blockDim.x) {
         float mx = mij0[y];
         for (int t = 0; t < n; t++) {
-            mx = fmaxf(mx, sij[y * bc + t]);
+            mx = fmaxf(mx, sij[y * bc_pad + t]);
         }
         mij1[y] = mx;
     }
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void minus_max_and_exp(float *pij, float *sij, float *mij1) {
     int tx = threadIdx.x % num_warps;
     int ty = threadIdx.x / num_warps;
-    for (int y = ty; y < ar; y += threads_per_warp) {
+    for (int y = ty; y < br; y += threads_per_warp) {
         float mx = mij1[y];
-        for (int x = tx; x < ac; x += num_warps) {
+        for (int x = tx; x < bc; x += num_warps) {
 #ifndef NO_ROWMAX
-            pij[y * bc + x] = expf(sij[y * bc + x] - mx);
+            pij[y * bc_pad + x] = expf(sij[y * bc_pad + x] - mx);
 #else
-            pij[y * bc + x] = expf(sij[y * bc + x]);
+            pij[y * bc_pad + x] = expf(sij[y * bc_pad + x]);
 #endif  // NO_ROWMAX
         }
     }
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void row_sum(float *lij1, float *pij, float *lij0, float *mij0, float *mij1, int n) {
-    for (int y = threadIdx.x; y < ar; y += blockDim.x) {
+    for (int y = threadIdx.x; y < br; y += blockDim.x) {
 #ifndef NO_ROWMAX
         float sum = expf(mij0[y] - mij1[y]) * lij0[y];
 #else
         float sum = lij0[y];
 #endif  // NO_ROWMAX
         for (int t = 0; t < n; t++) {
-            sum += pij[y * bc + t];
+            sum += pij[y * bc_pad + t];
         }
         lij1[y] = sum;
     }
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void inner_update_o(float *oi, float *pij, float *vj, float *mij0, float *mij1, int n, int d) {
     int tx = threadIdx.x % num_warps;
     int ty = threadIdx.x / num_warps;
-    for (int y = ty; y < ar; y += threads_per_warp) {
+    for (int y = ty; y < br; y += threads_per_warp) {
 #ifndef NO_ROWMAX
         float val0 = expf(mij0[y] - mij1[y]);
 #else
@@ -463,18 +463,18 @@ __device__ __forceinline__ void inner_update_o(float *oi, float *pij, float *vj,
         for (int x = tx; x < d; x += num_warps) {
             float sum = 0.0F;
             for (int t = 0; t < n; t++) {
-                sum += pij[y * bc + t] * vj[t * bd + x];
+                sum += pij[y * bc_pad + t] * vj[t * bd + x];
             }
             oi[y * bd + x] = val0 * oi[y * bd + x] + sum;
         }
     }
 }
 
-template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
+template <int bc, int br, int bc_pad, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void outer_update_lo(float *lij1, float *oi, float *mij0, float *lij0, int d) {
     int tx = threadIdx.x % num_warps;
     int ty = threadIdx.x / num_warps;
-    for (int y = ty; y < ar; y += threads_per_warp) {
+    for (int y = ty; y < br; y += threads_per_warp) {
         for (int x = tx; x < d; x += num_warps) {
             oi[y * bd + x] /= lij0[y];
         }
