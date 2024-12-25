@@ -137,7 +137,7 @@ def clean_old_output(outputs_bin):
 
 def execute_program(testcase_in, outputs_bin, args: Args):
     """Executes the program with the given configuration."""
-    cmd_srun = f"srun -N {1} -n {1} -c {1} --gres=gpu:1"
+    cmd_srun = f"srun -N {1} -n {1} -c {2} --gres=gpu:1 -p nvidia"
     cmd_prog = f"./hw4 {testcase_in} {outputs_bin}"
 
     if args.report_name is None:
