@@ -46,6 +46,8 @@ struct Data {
     float *O;
 };
 
+double get_timestamp();
+
 template <typename T>
 void cuda_init_array(T *arr, size_t size, T val, cudaStream_t stream);
 template <typename T>
@@ -94,19 +96,20 @@ int main(int argc, char *argv[]) {
     data.output_filename = argv[2];
 
 #ifdef PROFILING
-    timespec ts;
-    double start, end;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    start = ts.tv_sec + ts.tv_nsec * 1e-9;
+    double start_ts = get_timestamp();
 #endif  // PROFILING
     flash_attention::flash_attention_switch(&data);
 #ifdef PROFILING
-    clock_gettime(CLOCK_REALTIME, &ts);
-    end = ts.tv_sec + ts.tv_nsec * 1e-9;
-    fprintf(stderr, "took: %lf\n", end - start);
+    fprintf(stderr, "took: %lf\n", get_timestamp() - start_ts);
 #endif  // PROFILING
 
     return 0;
+}
+
+double get_timestamp() {
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
 template <typename T>
