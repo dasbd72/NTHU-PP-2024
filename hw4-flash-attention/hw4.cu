@@ -68,7 +68,7 @@ void flash_attention_switch(Data *data);
 template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
 void flash_attention(Data *data);
 template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
-__global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N_pad, int N, int d_pad, int d);
+__global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N_pad, int N_q, int N_kv, int d_pad, int d);
 template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
 __device__ __forceinline__ void qk_dot_and_scalar(float *out, float *q, float *k, int d, float scalar);
 template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
@@ -267,7 +267,7 @@ void flash_attention(Data *data) {
             d_K_pad + i * bb * N_pad * d_pad,
             d_V_pad + i * bb * N_pad * d_pad,
             d_L_pad + i * bb * N_pad,
-            N_pad, N, d_pad, d);
+            N_pad, N, N, d_pad, d);
 
         // Asynchronous memory copy back to host
         cuda_unpad_buffer(d_O + i * bb * N * d, d_O_pad + i * bb * N_pad * d_pad, num_batches, N, d, num_batches, N_pad, d_pad, streams[i]);
@@ -306,11 +306,11 @@ void flash_attention(Data *data) {
 }
 
 template <int ac, int ar, int bc, int br, int bd, int num_warps, int threads_per_warp>
-__global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N_pad, int N, int d_pad, int d) {
+__global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, float *L, int N_pad, int N_q, int N_kv, int d_pad, int d) {
     // Thread and block index
     const int tx = threadIdx.x % num_warps;
     const int ty = threadIdx.x / num_warps;
-    const int tc = (int)ceilf((float)N / ac);
+    const int tc = (int)ceilf((float)N_q / ac);
 
     // Shared memory allocation
     extern __shared__ float shared_mem[];
@@ -350,7 +350,7 @@ __global__ void flash_attention_kernel(float *O, float *Q, float *K, float *V, f
 #endif  // NO_ROWMAX
     }
     for (int j = 0; j < tc; j++) {
-        int n = min(N - j * ac, ac);
+        int n = min(N_kv - j * ac, ac);
         // Load K and V to shared memory
         for (int x = tx; x < n; x += num_warps) {
             for (int y = ty; y < d; y += threads_per_warp) {
